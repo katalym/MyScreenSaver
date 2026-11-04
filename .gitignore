@@ -1,0 +1,9 @@
+*.exe
+*.scr
+*.dcu
+*.dcr
+*.res
+*.local
+*.dsk
+*.~dsk
+__history/
