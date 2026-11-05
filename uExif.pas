@@ -27,6 +27,8 @@ type
   end;
 
 function ReadExif(const AFileName: string): TExifInfo;
+{ Values of arbitrary EXIF tags (by number) as text; '' if a tag is absent. }
+function ReadExifTagTexts(const AFileName: string; const ATags: TArray<Integer>): TArray<string>;
 
 implementation
 
@@ -52,9 +54,12 @@ type
     function UnicodeTag(AIfd, ATag: Integer): string;
     function GpsCoord(AIfd, ATagRef, ATagVal: Integer; out AValue: Double): Boolean;
     procedure Parse(var AInfo: TExifInfo);
+    function FormatEntry(AEntry, ATag: Integer): string;
   public
     constructor Create(const AData: TBytes; ABase: Integer);
     procedure Fill(var AInfo: TExifInfo);
+    function Init: Boolean;
+    function AnyTagText(ATag: Integer): string;
   end;
 
 function ParseExifDate(const S: string; out ADate: TDateTime): Boolean;
@@ -305,6 +310,149 @@ begin
   AInfo.Valid := True;
 end;
 
+function TTiffReader.Init: Boolean;
+begin
+  Result := False;
+  if (U8(0) = Ord('I')) and (U8(1) = Ord('I')) then
+    FBig := False
+  else if (U8(0) = Ord('M')) and (U8(1) = Ord('M')) then
+    FBig := True
+  else
+    Exit;
+  Result := U16(2) = 42;
+end;
+
+{ Text of an entry of any type (own tags chosen by the user). }
+function TTiffReader.FormatEntry(AEntry, ATag: Integer): string;
+var
+  vType, vCount, vOff, i, vN, vSkip: Integer;
+  vBytes: TBytes;
+  vPrintable: Boolean;
+  vNum, vDen: Cardinal;
+  vValue: Double;
+  vParts: TStringList;
+begin
+  Result := '';
+  vType := U16(AEntry + 2);
+  vCount := Integer(U32(AEntry + 4));
+  if vCount <= 0 then
+    Exit;
+  vOff := ValueOffset(AEntry);
+  if (ATag >= $9C9B) and (ATag <= $9C9F) then
+  begin
+    // Windows XP tags are UTF-16 stored as bytes
+    vN := Min(vCount, 8192);
+    SetLength(vBytes, vN);
+    for i := 0 to vN - 1 do
+      vBytes[i] := Byte(U8(vOff + i));
+    Exit(Trim(TEncoding.Unicode.GetString(vBytes).TrimRight([#0])));
+  end;
+  vParts := TStringList.Create;
+  try
+    vParts.Delimiter := ',';
+    vParts.StrictDelimiter := True;
+    case vType of
+      2:
+        begin
+          vN := Min(vCount, 4096);
+          SetLength(vBytes, vN);
+          for i := 0 to vN - 1 do
+            vBytes[i] := Byte(U8(vOff + i));
+          Result := Trim(TEncoding.UTF8.GetString(vBytes).TrimRight([#0]));
+          if Result.Contains(#$FFFD) then
+            Result := Trim(TEncoding.ANSI.GetString(vBytes).TrimRight([#0]));
+        end;
+      1, 7:
+        begin
+          vN := Min(vCount, 1024);
+          vSkip := 0;
+          if (ATag = $9286) and (vN > 8) then
+            vSkip := 8;   // UserComment starts with an 8 byte character set id
+          SetLength(vBytes, vN - vSkip);
+          vPrintable := True;
+          for i := 0 to vN - vSkip - 1 do
+          begin
+            vBytes[i] := Byte(U8(vOff + vSkip + i));
+            if (vBytes[i] < 32) and (vBytes[i] <> 0) and (vBytes[i] <> 10) and (vBytes[i] <> 13) then
+              vPrintable := False;
+          end;
+          if vPrintable then
+          begin
+            Result := Trim(TEncoding.UTF8.GetString(vBytes).TrimRight([#0]));
+            if Result.Contains(#$FFFD) then
+              Result := Trim(TEncoding.ANSI.GetString(vBytes).TrimRight([#0]));
+          end
+          else
+          begin
+            for i := 0 to Min(Integer(High(vBytes)), 31) do
+              vParts.Add(IntToStr(vBytes[i]));
+            Result := vParts.DelimitedText.Replace(',', ' ');
+          end;
+        end;
+      3, 8:
+        begin
+          for i := 0 to Min(vCount, 16) - 1 do
+            if (vType = 8) and (U16(vOff + i * 2) > 32767) then
+              vParts.Add(IntToStr(U16(vOff + i * 2) - 65536))
+            else
+              vParts.Add(IntToStr(U16(vOff + i * 2)));
+          Result := vParts.DelimitedText.Replace(',', ', ');
+        end;
+      4, 9:
+        begin
+          for i := 0 to Min(vCount, 16) - 1 do
+            if vType = 9 then
+              vParts.Add(IntToStr(Integer(U32(vOff + i * 4))))
+            else
+              vParts.Add(IntToStr(U32(vOff + i * 4)));
+          Result := vParts.DelimitedText.Replace(',', ', ');
+        end;
+      5, 10:
+        begin
+          for i := 0 to Min(vCount, 8) - 1 do
+          begin
+            vNum := U32(vOff + i * 8);
+            vDen := U32(vOff + i * 8 + 4);
+            if vDen = 0 then
+              vValue := 0
+            else if vType = 10 then
+              vValue := Integer(vNum) / Integer(vDen)
+            else
+              vValue := vNum / vDen;
+            vParts.Add(FormatFloat('0.####', vValue));
+          end;
+          Result := vParts.DelimitedText.Replace(',', ', ');
+        end;
+    end;
+  finally
+    vParts.Free;
+  end;
+end;
+
+{ Looks for the tag in IFD0, then in the Exif IFD, then in the GPS IFD. }
+function TTiffReader.AnyTagText(ATag: Integer): string;
+var
+  vIfd0, vEntry, vSub: Integer;
+begin
+  Result := '';
+  vIfd0 := Integer(U32(4));
+  vEntry := FindEntry(vIfd0, ATag);
+  if vEntry < 0 then
+  begin
+    vSub := FindEntry(vIfd0, $8769);
+    if vSub >= 0 then
+      vEntry := FindEntry(Integer(U32(vSub + 8)), ATag);
+  end;
+  if vEntry < 0 then
+  begin
+    vSub := FindEntry(vIfd0, $8825);
+    if vSub >= 0 then
+      vEntry := FindEntry(Integer(U32(vSub + 8)), ATag);
+  end;
+  if vEntry >= 0 then
+    Result := FormatEntry(vEntry, ATag);
+end;
+
 procedure TTiffReader.Fill(var AInfo: TExifInfo);
 begin
   if (U8(0) = Ord('I')) and (U8(1) = Ord('I')) then
@@ -483,6 +631,56 @@ begin
       Result.Valid := True;
   except
     Result := Default(TExifInfo);
+  end;
+end;
+
+function ReadExifTagTexts(const AFileName: string; const ATags: TArray<Integer>): TArray<string>;
+var
+  vStream: TFileStream;
+  vData: TBytes;
+  vSize, vPos, vLen, vMarker, i: Integer;
+  vReader: TTiffReader;
+begin
+  SetLength(Result, Length(ATags));
+  try
+    vStream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyNone);
+    try
+      vSize := Integer(Min(vStream.Size, 256 * 1024));
+      SetLength(vData, vSize);
+      if vSize > 0 then
+        vStream.ReadBuffer(vData[0], vSize);
+    finally
+      vStream.Free;
+    end;
+    if (vSize < 4) or (vData[0] <> $FF) or (vData[1] <> $D8) then
+      Exit;
+    vPos := 2;
+    while vPos + 4 < vSize do
+    begin
+      if vData[vPos] <> $FF then
+        Break;
+      vMarker := vData[vPos + 1];
+      if (vMarker = $DA) or (vMarker = $D9) then
+        Break;
+      vLen := (vData[vPos + 2] shl 8) or vData[vPos + 3];
+      if (vMarker = $E1) and (vPos + 10 < vSize) and
+        (vData[vPos + 4] = Ord('E')) and (vData[vPos + 5] = Ord('x')) and
+        (vData[vPos + 6] = Ord('i')) and (vData[vPos + 7] = Ord('f')) then
+      begin
+        vReader := TTiffReader.Create(vData, vPos + 10);
+        try
+          if vReader.Init then
+            for i := 0 to Integer(High(ATags)) do
+              Result[i] := vReader.AnyTagText(ATags[i]);
+        finally
+          vReader.Free;
+        end;
+        Break;
+      end;
+      Inc(vPos, 2 + vLen);
+    end;
+  except
+    // unreadable file: no values
   end;
 end;
 

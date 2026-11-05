@@ -42,6 +42,13 @@ build.bat
 отмечены оба, показываются оба типа; хотя бы один флажок всегда отмечен), правила, **язык интерфейса: Русский (Russian) или English (Английский)**.
 По умолчанию язык берётся из языка Windows.
 
+Кнопка **«Поля окна информации (I)...»**: какие поля показывает окно информации (клавиша **I**) — все
+встроенные поля (файл, размер, камера, теги XP / IPTC / XMP, дата съёмки, GPS, место и т. д.) можно
+включать и выключать. По умолчанию включены: файл, коллекция, расположение, разрешение, длительность,
+теги XP, теги IPTC/XMP, дата съёмки, GPS, место. Кнопка «Добавить EXIF-тег...» добавляет свой тег по номеру (например
+`0x010E` описание, `0x013B` автор, `0x9286` комментарий) с необязательным названием; такие теги
+показываются для JPEG после встроенных полей. В INI: раздел `[Info]` (`Fields=...`, `CustomN=0x9286|Название|1`).
+
 Файл настроек: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; ключ `Language=ru|en` в `[General]`).
 Пароли коллекций хранятся в INI открытым текстом.
 
@@ -113,6 +120,13 @@ Settings dialog (`/c` or key **C**): collections (local, UNC, HTTP listing, FTP)
 (fully random / by rules), what to show (check boxes "Show photos" and "Show videos"; if both are checked,
 both types are shown; at least one box always stays checked), rules, **interface language: Русский (Russian) or English (Английский)**.
 By default the language follows the Windows language.
+
+The **"Information dialog fields (I)..."** button: which fields the information dialog (key **I**) shows —
+all built-in fields (file, size, camera, XP / IPTC / XMP tags, date taken, GPS, place, etc.) can be
+switched on and off. On by default: file, collection, location, resolution, duration, XP tags, IPTC/XMP tags,
+date taken, GPS, place. "Add EXIF tag..." adds an own tag by its number (for example
+`0x010E` description, `0x013B` artist, `0x9286` user comment) with an optional caption; such tags are shown
+for JPEG after the built-in fields. In the INI: section `[Info]` (`Fields=...`, `CustomN=0x9286|Caption|1`).
 
 Settings file: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; key `Language=ru|en` in `[General]`).
 Collection passwords are stored in the INI as plain text.

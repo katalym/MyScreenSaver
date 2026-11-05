@@ -11,7 +11,7 @@ implementation
 
 uses
   Winapi.Windows, System.SysUtils, System.Classes, System.Math, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls,
-  Vcl.CheckLst, Vcl.Dialogs, uConfig, uRules, uLang;
+  Vcl.CheckLst, Vcl.Dialogs, uConfig, uRules, uLang, uInfoFieldsForm;
 
 type
   TSettingsForm = class(TForm)
@@ -23,6 +23,7 @@ type
     FAddFolder: TButton;
     FAddUrl: TButton;
     FRemove: TButton;
+    FInfoFields: TButton;
     FSecondsLabel: TLabel;
     FSeconds: TEdit;
     FMediaLabel: TLabel;
@@ -53,6 +54,7 @@ type
     function AddButton(ALeft, ATop, AWidth: Integer; AClick: TNotifyEvent): TButton;
     procedure ApplyTexts;
     procedure LangChange(Sender: TObject);
+    procedure InfoFieldsClick(Sender: TObject);
     procedure MediaClick(Sender: TObject);
     procedure AddFolderClick(Sender: TObject);
     procedure AddUrlClick(Sender: TObject);
@@ -110,6 +112,7 @@ begin
   FAddUrl := AddButton(170, 186, 230, AddUrlClick);
   FRemove := AddButton(408, 186, 100, RemoveClick);
 
+  FInfoFields := AddButton(330, 222, 298, InfoFieldsClick);
   FSecondsLabel := AddLabel(12, 228);
   FSeconds := AddEdit(240, 225, 60);
 
@@ -206,6 +209,7 @@ begin
   FMediaLabel.Caption := L('Что показывать:', 'What to show:');
   FShowPhotos.Caption := L('Показывать фото', 'Show photos');
   FShowVideos.Caption := L('Показывать видео', 'Show videos');
+  FInfoFields.Caption := L('Поля окна информации (I)...', 'Information dialog fields (I)...');
   FSecondsLabel.Caption := L('Время показа одного файла, сек:', 'Display time of one file, sec:');
   FModeLabel.Caption := L('Режим выбора:', 'Selection mode:');
   FRulesLabel.Caption := L('Активные правила (для режима "По правилам"):', 'Active rules (for the "By rules" mode):');
@@ -244,6 +248,11 @@ procedure TSettingsForm.MediaClick(Sender: TObject);
 begin
   if not FShowPhotos.Checked and not FShowVideos.Checked then
     (Sender as TCheckBox).Checked := True;
+end;
+
+procedure TSettingsForm.InfoFieldsClick(Sender: TObject);
+begin
+  ShowInfoFieldsDialog;
 end;
 
 procedure TSettingsForm.LangChange(Sender: TObject);

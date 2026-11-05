@@ -81,7 +81,7 @@ implementation
 
 uses
   System.IOUtils, System.DateUtils, System.StrUtils, System.Math, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
-  Winapi.Wincodec, uLang, uLocation, uRules, uExif, uShare, uSettingsForm;
+  Winapi.Wincodec, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
 
 const
   HistoryLimit = 100000;
@@ -758,78 +758,136 @@ var
   vSize: Int64;
   vMeta: TMediaMeta;
   vPlace: string;
+  vExifHeader: Boolean;
+  vTags: TArray<Integer>;
+  vTexts: TArray<string>;
+  vCustom: TArray<TInfoCustomTag>;
+  i, vK: Integer;
 
-  procedure Add(const ACaption, AValue: string);
+  procedure AddLine(const ACaption, AValue: string);
   begin
     if AValue <> '' then
       vSl.Add(Format('%-18s %s', [ACaption + ':', AValue]));
   end;
 
+  { a built-in field, only if it is switched on in the settings }
+  procedure Add(const AId, AValue: string);
+  begin
+    if InfoFieldOn(AId) then
+      AddLine(InfoFieldTitle(AId), AValue);
+  end;
+
+  { the same for the EXIF block; its header is printed before the first line }
+  procedure AddExif(const AId, AValue: string);
+  begin
+    if (AValue = '') or not InfoFieldOn(AId) then
+      Exit;
+    if not vExifHeader then
+    begin
+      vSl.Add('');
+      vSl.Add('--- EXIF ---');
+      vExifHeader := True;
+    end;
+    AddLine(InfoFieldTitle(AId), AValue);
+  end;
+
 begin
   vSl := TStringList.Create;
   try
-    Add(L('Файл', 'File'), FCurrentItem.DisplayName);
-    Add(L('Коллекция', 'Collection'), FCurrentItem.Collection);
-    Add(L('Расположение', 'Location'), FCurrentItem.Location);
+    vExifHeader := False;
+    Add('file', FCurrentItem.DisplayName);
+    Add('collection', FCurrentItem.Collection);
+    Add('location', FCurrentItem.Location);
     if (FCurrentPath <> '') and FileExists(FCurrentPath) then
     begin
       vSize := TFile.GetSize(FCurrentPath);
-      Add(L('Размер', 'Size'), Format('%s (%d %s)', [FormatFloat('#,##0.0', vSize / 1048576) + L(' МБ', ' MB'), vSize, L('байт', 'bytes')]));
-      Add(L('Дата создания', 'Created'), DateTimeToStr(TFile.GetCreationTime(FCurrentPath)));
-      Add(L('Дата изменения', 'Modified'), DateTimeToStr(TFile.GetLastWriteTime(FCurrentPath)));
+      Add('size', Format('%s (%d %s)', [FormatFloat('#,##0.0', vSize / 1048576) + L(' МБ', ' MB'), vSize, L('байт', 'bytes')]));
+      Add('created', DateTimeToStr(TFile.GetCreationTime(FCurrentPath)));
+      Add('modified', DateTimeToStr(TFile.GetLastWriteTime(FCurrentPath)));
     end;
     if FCurrentItem.Kind = mkPhoto then
     begin
-      Add(L('Тип', 'Type'), L('Фотография', 'Photo'));
+      Add('type', L('Фотография', 'Photo'));
       if FImage.Picture.Width > 0 then
-        Add(L('Разрешение', 'Resolution'), Format('%d x %d', [FImage.Picture.Width, FImage.Picture.Height]));
+        Add('resolution', Format('%d x %d', [FImage.Picture.Width, FImage.Picture.Height]));
       vExif := ReadExif(FCurrentPath);
       if vExif.Valid then
       begin
-        vSl.Add('');
-        vSl.Add('--- EXIF ---');
-        Add(L('Производитель', 'Make'), vExif.Make);
-        Add(L('Камера', 'Camera'), vExif.Model);
-        Add(L('Объектив', 'Lens'), vExif.Lens);
-        Add(L('Теги (XP)', 'Tags (XP)'), vExif.XPKeywords);
+        AddExif('make', vExif.Make);
+        AddExif('camera', vExif.Model);
+        AddExif('lens', vExif.Lens);
+        AddExif('tagsxp', vExif.XPKeywords);
         if not SameText(vExif.Keywords, vExif.XPKeywords) then
-          Add(L('Теги (IPTC/XMP)', 'Tags (IPTC/XMP)'), vExif.Keywords);
+          AddExif('tagsiptc', vExif.Keywords);
         if vExif.HasDate then
-          Add(L('Дата съёмки', 'Date taken'), DateTimeToStr(vExif.DateTaken));
-        Add(L('Выдержка', 'Exposure'), vExif.Exposure);
-        Add(L('Диафрагма', 'Aperture'), vExif.FNumber);
-        Add('ISO', vExif.ISO);
-        Add(L('Фокусное', 'Focal length'), vExif.FocalLength);
+          AddExif('datetaken', DateTimeToStr(vExif.DateTaken));
+        AddExif('exposure', vExif.Exposure);
+        AddExif('aperture', vExif.FNumber);
+        AddExif('iso', vExif.ISO);
+        AddExif('focal', vExif.FocalLength);
         if vExif.HasGps then
         begin
-          Add('GPS', Format('%.6f, %.6f', [vExif.Lat, vExif.Lon],
-            TFormatSettings.Invariant));
-          Screen.Cursor := crHourGlass;
-          try
-            vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
-          finally
-            Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
+          AddExif('gps', Format('%.6f, %.6f', [vExif.Lat, vExif.Lon], TFormatSettings.Invariant));
+          if InfoFieldOn('place') then
+          begin
+            Screen.Cursor := crHourGlass;
+            try
+              vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
+            finally
+              Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
+            end;
+            if vPlace = '' then
+              vPlace := L('(не удалось определить — нет интернета?)', '(could not be determined — no internet?)');
+            AddExif('place', vPlace);
           end;
-          if vPlace <> '' then
-            Add(L('Место', 'Place'), vPlace)
-          else
-            Add(L('Место', 'Place'), L('(не удалось определить — нет интернета?)', '(could not be determined — no internet?)'));
         end;
+      end;
+      // own EXIF tags chosen in the settings
+      vCustom := Settings.CustomTags.ToArray;
+      SetLength(vTags, 0);
+      for i := 0 to Integer(High(vCustom)) do
+        if vCustom[i].Enabled then
+        begin
+          SetLength(vTags, Length(vTags) + 1);
+          vTags[High(vTags)] := vCustom[i].Tag;
+        end;
+      if Length(vTags) > 0 then
+      begin
+        vTexts := ReadExifTagTexts(FCurrentPath, vTags);
+        i := 0;
+        for vK := 0 to Integer(High(vCustom)) do
+          if vCustom[vK].Enabled then
+          begin
+            if vTexts[i] <> '' then
+            begin
+              if not vExifHeader then
+              begin
+                vSl.Add('');
+                vSl.Add('--- EXIF ---');
+                vExifHeader := True;
+              end;
+              if vCustom[vK].Caption <> '' then
+                AddLine(vCustom[vK].Caption, vTexts[i])
+              else
+                AddLine(Format('0x%.4X', [vCustom[vK].Tag]), vTexts[i]);
+            end;
+            Inc(i);
+          end;
       end;
     end
     else
     begin
-      Add(L('Тип', 'Type'), L('Видео', 'Video'));
+      Add('type', L('Видео', 'Video'));
       if FPlayer.currentMedia <> nil then
       begin
-        Add(L('Длительность', 'Duration'), FPlayer.currentMedia.durationString);
+        Add('duration', FPlayer.currentMedia.durationString);
         if FPlayer.currentMedia.imageSourceWidth > 0 then
-          Add(L('Разрешение', 'Resolution'), Format('%d x %d', [FPlayer.currentMedia.imageSourceWidth,
+          Add('resolution', Format('%d x %d', [FPlayer.currentMedia.imageSourceWidth,
             FPlayer.currentMedia.imageSourceHeight]));
       end;
       vMeta := GetMediaMeta(FCurrentItem);
       if vMeta.HasDate then
-        Add(L('Дата (файл)', 'Date (file)'), DateTimeToStr(vMeta.Date));
+        Add('datefile', DateTimeToStr(vMeta.Date));
     end;
     Result := vSl.Text;
   finally

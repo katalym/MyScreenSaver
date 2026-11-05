@@ -24,6 +24,13 @@ type
   { what to show: photos only, videos only, both }
   TMediaTypes = (mtPhotos, mtVideos, mtBoth);
 
+  { an own EXIF tag shown in the information dialog }
+  TInfoCustomTag = record
+    Tag: Integer;
+    Caption: string;
+    Enabled: Boolean;
+  end;
+
   TAppSettings = class
   public
     Collections: TList<TMediaCollection>;
@@ -31,6 +38,9 @@ type
     Mode: TSelectionMode;
     MediaTypes: TMediaTypes;
     ActiveRules: TStringList;
+    InfoFields: TStringList;          // enabled built-in fields of the information dialog (key I)
+    InfoFieldsConfigured: Boolean;    // False: all fields are shown (default)
+    CustomTags: TList<TInfoCustomTag>;
     DefaultRule: string;
     DayTolerance: Integer;       // "on this day": +/- days
     HomeName: string;
@@ -51,6 +61,8 @@ type
   end;
 
 function Settings: TAppSettings;
+{ '0x9286', '$9286' or '37510' -> tag number }
+function ParseTagNumber(const AText: string; out ATag: Integer): Boolean;
 
 implementation
 
@@ -68,6 +80,16 @@ begin
     GSettings.Load;
   end;
   Result := GSettings;
+end;
+
+function ParseTagNumber(const AText: string; out ATag: Integer): Boolean;
+var
+  vText: string;
+begin
+  vText := Trim(AText);
+  if vText.StartsWith('0x', True) then
+    vText := '$' + vText.Substring(2);
+  Result := TryStrToInt(vText, ATag) and (ATag > 0) and (ATag <= $FFFF);
 end;
 
 function ReadFloat(AIni: TMemIniFile; const ASection, AKey: string; ADefault: Double): Double;
@@ -99,6 +121,8 @@ begin
   inherited Create;
   Collections := TList<TMediaCollection>.Create;
   ActiveRules := TStringList.Create;
+  InfoFields := TStringList.Create;
+  CustomTags := TList<TInfoCustomTag>.Create;
   SlideSeconds := 10;
   Mode := smRandom;
   MediaTypes := mtBoth;
@@ -112,6 +136,8 @@ end;
 
 destructor TAppSettings.Destroy;
 begin
+  FreeAndNil(CustomTags);
+  FreeAndNil(InfoFields);
   FreeAndNil(ActiveRules);
   FreeAndNil(Collections);
   inherited;
@@ -130,6 +156,9 @@ var
   vColl: TMediaCollection;
   vCount, i: Integer;
   vSec: string;
+  vParts: TArray<string>;
+  vTag: TInfoCustomTag;
+  vNumber: Integer;
 begin
   if not FileExists(ConfigPath) then
     Exit;
@@ -159,6 +188,28 @@ begin
     AutoLocate := vIni.ReadBool('Rules', 'AutoLocate', False);
     Language := LanguageFromCode(vIni.ReadString('General', 'Language', ''), DefaultLanguage);
     SetLanguage(Language);
+
+    InfoFieldsConfigured := vIni.ValueExists('Info', 'Fields');
+    InfoFields.Clear;
+    if InfoFieldsConfigured then
+      InfoFields.CommaText := vIni.ReadString('Info', 'Fields', '');
+    CustomTags.Clear;
+    vCount := vIni.ReadInteger('Info', 'CustomCount', 0);
+    for i := 1 to vCount do
+    begin
+      // Custom1=0x9286|Caption|1
+      vParts := vIni.ReadString('Info', 'Custom' + IntToStr(i), '').Split(['|']);
+      if (Length(vParts) >= 1) and ParseTagNumber(vParts[0], vNumber) then
+      begin
+        vTag.Tag := vNumber;
+        if Length(vParts) >= 2 then
+          vTag.Caption := vParts[1]
+        else
+          vTag.Caption := '';
+        vTag.Enabled := (Length(vParts) < 3) or (vParts[2] <> '0');
+        CustomTags.Add(vTag);
+      end;
+    end;
 
     Collections.Clear;
     vCount := vIni.ReadInteger('Collections', 'Count', 0);
@@ -211,6 +262,13 @@ begin
     vIni.WriteString('Rules', 'HomeLon', FloatToStr(HomeLon, TFormatSettings.Invariant));
     vIni.WriteString('Rules', 'HomeRadiusKm', FloatToStr(HomeRadiusKm, TFormatSettings.Invariant));
     vIni.WriteBool('Rules', 'AutoLocate', AutoLocate);
+
+    if InfoFieldsConfigured then
+      vIni.WriteString('Info', 'Fields', InfoFields.CommaText);
+    vIni.WriteInteger('Info', 'CustomCount', Integer(CustomTags.Count));
+    for i := 0 to Integer(CustomTags.Count) - 1 do
+      vIni.WriteString('Info', 'Custom' + IntToStr(i + 1),
+        Format('0x%.4X|%s|%d', [CustomTags[i].Tag, CustomTags[i].Caption, Ord(CustomTags[i].Enabled)]));
 
     vIni.WriteInteger('Collections', 'Count', Integer(Collections.Count));
     i := 0;

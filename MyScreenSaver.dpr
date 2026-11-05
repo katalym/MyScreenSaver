@@ -17,6 +17,8 @@ uses
   uMedia in 'uMedia.pas',
   uRules in 'uRules.pas',
   uShare in 'uShare.pas',
+  uInfoFields in 'uInfoFields.pas',
+  uInfoFieldsForm in 'uInfoFieldsForm.pas',
   uSettingsForm in 'uSettingsForm.pas',
   uViewer in 'uViewer.pas',
   uPreview in 'uPreview.pas',

@@ -96,13 +96,17 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="uExif.pas"/>
+        <DCCReference Include="uLang.pas"/>
         <DCCReference Include="uConfig.pas"/>
         <DCCReference Include="uLocation.pas"/>
         <DCCReference Include="uMedia.pas"/>
         <DCCReference Include="uRules.pas"/>
         <DCCReference Include="uShare.pas"/>
+        <DCCReference Include="uInfoFields.pas"/>
+        <DCCReference Include="uInfoFieldsForm.pas"/>
         <DCCReference Include="uSettingsForm.pas"/>
         <DCCReference Include="uViewer.pas"/>
+        <DCCReference Include="uPreview.pas"/>
         <DCCReference Include="WMPLib.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
