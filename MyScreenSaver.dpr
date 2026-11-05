@@ -20,6 +20,7 @@ uses
   uInfoFields in 'uInfoFields.pas',
   uInfoFieldsForm in 'uInfoFieldsForm.pas',
   uSettingsForm in 'uSettingsForm.pas',
+  uSlideView in 'uSlideView.pas',
   uViewer in 'uViewer.pas',
   uPreview in 'uPreview.pas',
   WMPLib in 'WMPLib.pas';

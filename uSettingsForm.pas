@@ -26,6 +26,10 @@ type
     FInfoFields: TButton;
     FSecondsLabel: TLabel;
     FSeconds: TEdit;
+    FTransLabel: TLabel;
+    FTransition: TComboBox;
+    FTransMsLabel: TLabel;
+    FTransMs: TEdit;
     FMediaLabel: TLabel;
     FShowPhotos: TCheckBox;
     FShowVideos: TCheckBox;
@@ -89,7 +93,7 @@ begin
   BorderStyle := bsDialog;
   Position := poScreenCenter;
   ClientWidth := 640;
-  ClientHeight := 590;
+  ClientHeight := 620;
   Font.Name := 'Segoe UI';
   Font.Size := 9;
   FRuleNames := TStringList.Create;
@@ -132,34 +136,42 @@ begin
   FShowVideos.SetBounds(420, 288, 170, 19);
   FShowVideos.OnClick := MediaClick;
 
-  FRulesLabel := AddLabel(12, 320);
+  FTransLabel := AddLabel(12, 322);
+  FTransition := TComboBox.Create(Self);
+  FTransition.Parent := Self;
+  FTransition.Style := csDropDownList;
+  FTransition.SetBounds(240, 319, 165, 23);
+  FTransMsLabel := AddLabel(420, 322);
+  FTransMs := AddEdit(540, 319, 60);
+
+  FRulesLabel := AddLabel(12, 352);
   FRules := TCheckListBox.Create(Self);
   FRules.Parent := Self;
-  FRules.SetBounds(12, 340, 616, 70);
+  FRules.SetBounds(12, 372, 616, 70);
 
-  FDefaultLabel := AddLabel(12, 422);
+  FDefaultLabel := AddLabel(12, 454);
   FDefault := TComboBox.Create(Self);
   FDefault.Parent := Self;
   FDefault.Style := csDropDownList;
-  FDefault.SetBounds(240, 419, 250, 23);
+  FDefault.SetBounds(240, 451, 250, 23);
 
-  FToleranceLabel := AddLabel(12, 454);
-  FTolerance := AddEdit(240, 451, 60);
+  FToleranceLabel := AddLabel(12, 486);
+  FTolerance := AddEdit(240, 483, 60);
 
-  FHomeNameLabel := AddLabel(12, 486);
-  FHomeName := AddEdit(240, 483, 250);
-  FGeoLabel := AddLabel(12, 516);
-  FLat := AddEdit(240, 513, 90);
-  FLon := AddEdit(336, 513, 90);
-  FRadius := AddEdit(432, 513, 58);
+  FHomeNameLabel := AddLabel(12, 518);
+  FHomeName := AddEdit(240, 515, 250);
+  FGeoLabel := AddLabel(12, 548);
+  FLat := AddEdit(240, 545, 90);
+  FLon := AddEdit(336, 545, 90);
+  FRadius := AddEdit(432, 545, 58);
   FAuto := TCheckBox.Create(Self);
   FAuto.Parent := Self;
-  FAuto.SetBounds(500, 485, 130, 40);
+  FAuto.SetBounds(500, 517, 130, 40);
   FAuto.WordWrap := True;
 
-  FOk := AddButton(440, 552, 90, OkClick);
+  FOk := AddButton(440, 584, 90, OkClick);
   FOk.Default := True;
-  FCancel := AddButton(538, 552, 90, nil);
+  FCancel := AddButton(538, 584, 90, nil);
   FCancel.ModalResult := mrCancel;
   FCancel.Cancel := True;
   Load;
@@ -197,7 +209,7 @@ end;
 { (Re)sets all texts for the current language. }
 procedure TSettingsForm.ApplyTexts;
 var
-  i, vModeIdx, vDefaultIdx: Integer;
+  i, vModeIdx, vDefaultIdx, vTransIdx: Integer;
   vChecked: array of Boolean;
 begin
   Caption := L('MyScreenSaver — настройки', 'MyScreenSaver — settings');
@@ -206,6 +218,8 @@ begin
   FAddFolder.Caption := L('Добавить папку...', 'Add folder...');
   FAddUrl.Caption := L('Добавить адрес (UNC/HTTP/FTP)...', 'Add address (UNC/HTTP/FTP)...');
   FRemove.Caption := L('Удалить', 'Remove');
+  FTransLabel.Caption := L('Переход между слайдами:', 'Slide transition:');
+  FTransMsLabel.Caption := L('Длительность, мс:', 'Duration, ms:');
   FMediaLabel.Caption := L('Что показывать:', 'What to show:');
   FShowPhotos.Caption := L('Показывать фото', 'Show photos');
   FShowVideos.Caption := L('Показывать видео', 'Show videos');
@@ -226,6 +240,16 @@ begin
   FMode.Items.Add(L('Полностью случайный', 'Fully random'));
   FMode.Items.Add(L('По правилам', 'By rules'));
   FMode.ItemIndex := vModeIdx;
+
+  vTransIdx := FTransition.ItemIndex;
+  FTransition.Items.Clear;
+  FTransition.Items.Add(L('Нет', 'None'));
+  FTransition.Items.Add(L('Плавное затухание', 'Cross-fade'));
+  FTransition.Items.Add(L('Через чёрное', 'Fade through black'));
+  FTransition.Items.Add(L('Сдвиг', 'Slide'));
+  FTransition.Items.Add(L('Шторка', 'Wipe'));
+  FTransition.Items.Add(L('Случайный', 'Random'));
+  FTransition.ItemIndex := vTransIdx;
 
   SetLength(vChecked, FRules.Items.Count);
   for i := 0 to FRules.Items.Count - 1 do
@@ -352,6 +376,8 @@ begin
     vIdx := 0;
   ApplyTexts;
   FMode.ItemIndex := Ord(Settings.Mode);
+  FTransition.ItemIndex := Ord(Settings.Transition);
+  FTransMs.Text := IntToStr(Settings.TransitionMs);
   FShowPhotos.Checked := Settings.MediaTypes in [mtPhotos, mtBoth];
   FShowVideos.Checked := Settings.MediaTypes in [mtVideos, mtBoth];
   for i := 0 to FRuleNames.Count - 1 do
@@ -382,6 +408,8 @@ begin
   if Settings.SlideSeconds < 1 then
     Settings.SlideSeconds := 1;
   Settings.Mode := TSelectionMode(FMode.ItemIndex);
+  Settings.Transition := TTransitionEffect(FTransition.ItemIndex);
+  Settings.TransitionMs := Max(100, Min(3000, StrToIntDef(FTransMs.Text, 800)));
   if FShowPhotos.Checked and FShowVideos.Checked then
     Settings.MediaTypes := mtBoth
   else if FShowVideos.Checked then

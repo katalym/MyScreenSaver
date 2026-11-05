@@ -7,7 +7,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Generics.Collections,
   Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
-  WMPLib, uConfig, uMedia;
+  WMPLib, uConfig, uMedia, uSlideView;
 
 type
   TViewerMode = (vmStandalone, vmScreenSaver);
@@ -21,7 +21,10 @@ type
     FIndexer: TMetaIndexer;
     FHistory: TList<TMediaItem>;
     FHistPos: Integer;
-    FImage: TImage;
+    FView: TSlideView;           // the photo with transitions
+    FUserNav: Boolean;           // the move was made by the user (arrow keys): short transition
+    FGoingBack: Boolean;         // the user goes to the previous slide
+    FPendingVideo: string;       // a video waits until the photo has faded to black
     FVideoHost: TPanel;
     FPlayer: TWindowsMediaPlayer;
     FStatus: TLabel;
@@ -51,6 +54,9 @@ type
     procedure ShowCurrent;
     procedure ShowPhoto(const APath: string; const AItem: TMediaItem);
     procedure ShowVideo(const APath: string);
+    procedure StartVideo(const APath: string);
+    procedure VideoFadedOut(Sender: TObject);
+    function TransitionLength: Integer;
     procedure ShowMessage(const AText: string);
     procedure ArmTimer;
     procedure TogglePause;
@@ -160,12 +166,10 @@ begin
     WindowState := wsMaximized;
   end;
 
-  FImage := TImage.Create(Self);
-  FImage.Parent := Self;
-  FImage.Align := alClient;
-  FImage.Center := True;
-  FImage.Proportional := True;
-  FImage.Stretch := True;
+  FView := TSlideView.Create(Self);
+  FView.Parent := Self;
+  FView.Align := alClient;
+  FView.OnFadedOut := VideoFadedOut;
 
   FVideoHost := TPanel.Create(Self);
   FVideoHost.Parent := Self;
@@ -381,9 +385,16 @@ begin
       else
         Result := FMode = vmStandalone;
     VK_LEFT:
-      GoPrev;
+      begin
+        FUserNav := True;
+        FGoingBack := True;
+        GoPrev;
+      end;
     VK_RIGHT:
-      GoNext;
+      begin
+        FUserNav := True;
+        GoNext;
+      end;
     VK_SHIFT, VK_CONTROL, VK_MENU:
       Result := False;
   else
@@ -398,6 +409,7 @@ end;
 
 procedure TViewerForm.TimerTick(Sender: TObject);
 begin
+  FUserNav := False;
   FTimer.Enabled := False;
   GoNext;
 end;
@@ -458,7 +470,8 @@ procedure TViewerForm.ShowMessage(const AText: string);
 begin
   FPlayer.controls.stop;
   FVideoHost.Visible := False;
-  FImage.Picture.Assign(nil);
+  FPendingVideo := '';
+  FView.Clear;
   FStatus.Caption := AText;
   FStatus.Visible := True;
   FStatus.BringToFront;
@@ -469,6 +482,7 @@ var
   vItem: TMediaItem;
   vPath: string;
 begin
+  FPendingVideo := '';
   vItem := FHistory[FHistPos];
   FCurrentItem := vItem;
   FHasCurrent := True;
@@ -508,20 +522,69 @@ end;
 
 procedure TViewerForm.ShowPhoto(const APath: string; const AItem: TMediaItem);
 var
-  vOrient: Integer;
+  vOrient, vMs: Integer;
+  vPic: TPicture;
+  vEffect: TTransitionEffect;
+  vDir: TSlideDirection;
 begin
   vOrient := 0;
   if MatchText(LowerCase(ExtractFileExt(APath)), ['.jpg', '.jpeg', '.jfif']) then
     vOrient := ReadExif(APath).Orientation;
-  LoadOrientedPicture(FImage.Picture, APath, vOrient);
-  FVideoHost.Visible := False;
-  FImage.Visible := True;
+  vMs := TransitionLength;
+  vEffect := Settings.Transition;
+  if vEffect = teRandom then
+    vEffect := TTransitionEffect(Ord(teFade) + Random(4));   // cross-fade, black, slide or wipe
+  if FGoingBack then
+    vDir := sdBackward
+  else
+    vDir := sdForward;
+  FGoingBack := False;
+  vPic := TPicture.Create;
+  try
+    LoadOrientedPicture(vPic, APath, vOrient);
+    FVideoHost.Visible := False;
+    FView.Visible := True;
+    FView.ShowPicture(vPic, vEffect, vMs, vDir);
+  finally
+    vPic.Free;
+  end;
   ArmTimer;
 end;
 
+{ A transition is never longer than half of the slide; the arrow keys use a short one. }
+function TViewerForm.TransitionLength: Integer;
+begin
+  Result := Min(Settings.TransitionMs, Settings.SlideSeconds * 500);
+  if FUserNav then
+    Result := Min(Result, 250);
+end;
+
+{ A photo fades to black before the video starts (the video window cannot be blended). }
 procedure TViewerForm.ShowVideo(const APath: string);
 begin
-  FImage.Picture.Assign(nil);
+  if (Settings.Transition <> teNone) and FView.Visible and FView.HasPicture and not FVideoHost.Visible then
+  begin
+    FPendingVideo := APath;
+    FView.FadeOut(TransitionLength div 2);
+  end
+  else
+    StartVideo(APath);
+end;
+
+procedure TViewerForm.VideoFadedOut(Sender: TObject);
+var
+  vPath: string;
+begin
+  if FPendingVideo = '' then
+    Exit;   // the slide was changed meanwhile
+  vPath := FPendingVideo;
+  FPendingVideo := '';
+  StartVideo(vPath);
+end;
+
+procedure TViewerForm.StartVideo(const APath: string);
+begin
+  FView.Clear;
   FVideoHost.Visible := True;
   FPlayer.URL := APath;
   FPlayer.controls.play;
@@ -808,8 +871,8 @@ begin
     if FCurrentItem.Kind = mkPhoto then
     begin
       Add('type', L('Фотография', 'Photo'));
-      if FImage.Picture.Width > 0 then
-        Add('resolution', Format('%d x %d', [FImage.Picture.Width, FImage.Picture.Height]));
+      if FView.PictureWidth > 0 then
+        Add('resolution', Format('%d x %d', [FView.PictureWidth, FView.PictureHeight]));
       vExif := ReadExif(FCurrentPath);
       if vExif.Valid then
       begin

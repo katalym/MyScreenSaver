@@ -21,6 +21,9 @@ type
 
   TSelectionMode = (smRandom, smRules);
 
+  { effect between two slides }
+  TTransitionEffect = (teNone, teFade, teFadeBlack, teSlide, teWipe, teRandom);
+
   { what to show: photos only, videos only, both }
   TMediaTypes = (mtPhotos, mtVideos, mtBoth);
 
@@ -37,6 +40,8 @@ type
     SlideSeconds: Integer;
     Mode: TSelectionMode;
     MediaTypes: TMediaTypes;
+    Transition: TTransitionEffect;
+    TransitionMs: Integer;           // duration of the transition, milliseconds
     ActiveRules: TStringList;
     InfoFields: TStringList;          // enabled built-in fields of the information dialog (key I)
     InfoFieldsConfigured: Boolean;    // False: all fields are shown (default)
@@ -67,7 +72,11 @@ function ParseTagNumber(const AText: string; out ATag: Integer): Boolean;
 implementation
 
 uses
-  System.IniFiles, System.IOUtils;
+  System.IniFiles, System.IOUtils, System.Math;
+
+const
+  { names of the effects in the INI file, in the order of TTransitionEffect }
+  TransitionNames: array[TTransitionEffect] of string = ('none', 'fade', 'black', 'slide', 'wipe', 'random');
 
 var
   GSettings: TAppSettings;
@@ -126,6 +135,8 @@ begin
   SlideSeconds := 4;
   Mode := smRandom;
   MediaTypes := mtBoth;
+  Transition := teFade;
+  TransitionMs := 800;
   DefaultRule := 'random';
   DayTolerance := 0;
   HomeRadiusKm := 50;
@@ -159,6 +170,8 @@ var
   vParts: TArray<string>;
   vTag: TInfoCustomTag;
   vNumber: Integer;
+  vName: string;
+  vEffect: TTransitionEffect;
 begin
   if not FileExists(ConfigPath) then
     Exit;
@@ -172,6 +185,12 @@ begin
     else
       Mode := smRandom;
     DefaultRule := vIni.ReadString('General', 'DefaultRule', DefaultRule);
+    vName := LowerCase(vIni.ReadString('General', 'Transition', 'fade'));
+    Transition := teFade;
+    for vEffect := Low(TTransitionEffect) to High(TTransitionEffect) do
+      if vName = TransitionNames[vEffect] then
+        Transition := vEffect;
+    TransitionMs := Max(100, Min(3000, vIni.ReadInteger('General', 'TransitionMs', 800)));
     if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'photos') then
       MediaTypes := mtPhotos
     else if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'videos') then
@@ -247,6 +266,8 @@ begin
     else
       vIni.WriteString('General', 'Mode', 'random');
     vIni.WriteString('General', 'DefaultRule', DefaultRule);
+    vIni.WriteString('General', 'Transition', TransitionNames[Transition]);
+    vIni.WriteInteger('General', 'TransitionMs', TransitionMs);
     case MediaTypes of
       mtPhotos: vIni.WriteString('General', 'MediaTypes', 'photos');
       mtVideos: vIni.WriteString('General', 'MediaTypes', 'videos');

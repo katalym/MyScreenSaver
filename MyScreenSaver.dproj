@@ -105,6 +105,7 @@
         <DCCReference Include="uInfoFields.pas"/>
         <DCCReference Include="uInfoFieldsForm.pas"/>
         <DCCReference Include="uSettingsForm.pas"/>
+        <DCCReference Include="uSlideView.pas"/>
         <DCCReference Include="uViewer.pas"/>
         <DCCReference Include="uPreview.pas"/>
         <DCCReference Include="WMPLib.pas"/>

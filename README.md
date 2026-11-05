@@ -38,7 +38,7 @@ build.bat
 ### Конфигурация и язык
 
 Окно настроек (`/c` или клавиша **C**): коллекции (локальные, UNC, HTTP-листинг, FTP), время показа, режим
-(полностью случайный / по правилам), что показывать (флажки «Показывать фото» и «Показывать видео»; если
+(полностью случайный / по правилам), переход между слайдами и его длительность в миллисекундах, что показывать (флажки «Показывать фото» и «Показывать видео»; если
 отмечены оба, показываются оба типа; хотя бы один флажок всегда отмечен), правила, **язык интерфейса: Русский (Russian) или English (Английский)**.
 По умолчанию язык берётся из языка Windows.
 
@@ -60,6 +60,15 @@ build.bat
 читаются в фоне и дописываются в тот же файл, поэтому правила «в этот день» и «по месту» начинают работать
 полнее с каждым запуском. Первый запуск без кэша: пока список строится, показываются случайные фото.
 Чтобы сбросить кэш, удалите файл.
+
+### Переходы между слайдами (`uSlideView.pas`)
+
+Эффекты: нет, **плавное затухание** (cross-fade), **через чёрное**, **сдвиг**, **шторка**, **случайный**
+(для каждой смены свой эффект). По умолчанию — плавное затухание, 800 мс (100–3000 мс; не дольше половины
+времени показа слайда). Стрелки ← и → задают направление сдвига и шторки (← — назад), при ручном листании
+переход не длиннее 250 мс. Перед видео фото затухает до чёрного, а после видео следующее фото проявляется из
+чёрного; смена видео на видео — без перехода (окно Windows Media Player нельзя смешивать с картинкой).
+В INI: `Transition=none|fade|black|slide|wipe|random`, `TransitionMs=800`.
 
 ### Правила выбора (`uRules.pas`)
 
@@ -117,7 +126,7 @@ the file is copied to the clipboard and the application is opened, you only have
 ### Configuration and language
 
 Settings dialog (`/c` or key **C**): collections (local, UNC, HTTP listing, FTP), display time, selection mode
-(fully random / by rules), what to show (check boxes "Show photos" and "Show videos"; if both are checked,
+(fully random / by rules), slide transition and its duration in milliseconds, what to show (check boxes "Show photos" and "Show videos"; if both are checked,
 both types are shown; at least one box always stays checked), rules, **interface language: Русский (Russian) or English (Английский)**.
 By default the language follows the Windows language.
 
@@ -139,6 +148,15 @@ background: new files are added, removed files disappear (if the collection is r
 read in the background and appended to the same file, so the "on this day" and "by place" rules work more
 completely with every start. First start without a cache: random photos are shown while the list is being built.
 To reset the cache, delete the file.
+
+### Slide transitions (`uSlideView.pas`)
+
+Effects: none, **cross-fade**, **fade through black**, **slide**, **wipe**, **random** (a different effect
+for every change). Cross-fade, 800 ms by default (100–3000 ms; never longer than half of the slide time).
+The arrow keys ← and → set the direction of the slide and the wipe (← goes back); when you page by hand the
+transition is at most 250 ms. A photo fades to black before a video, and the next photo appears from black
+after a video; video to video has no transition (the Windows Media Player window cannot be blended with
+a picture). In the INI: `Transition=none|fade|black|slide|wipe|random`, `TransitionMs=800`.
 
 ### Selection rules (`uRules.pas`)
 
