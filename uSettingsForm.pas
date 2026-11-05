@@ -25,6 +25,9 @@ type
     FRemove: TButton;
     FSecondsLabel: TLabel;
     FSeconds: TEdit;
+    FMediaLabel: TLabel;
+    FShowPhotos: TCheckBox;
+    FShowVideos: TCheckBox;
     FModeLabel: TLabel;
     FMode: TComboBox;
     FRulesLabel: TLabel;
@@ -50,6 +53,7 @@ type
     function AddButton(ALeft, ATop, AWidth: Integer; AClick: TNotifyEvent): TButton;
     procedure ApplyTexts;
     procedure LangChange(Sender: TObject);
+    procedure MediaClick(Sender: TObject);
     procedure AddFolderClick(Sender: TObject);
     procedure AddUrlClick(Sender: TObject);
     procedure RemoveClick(Sender: TObject);
@@ -83,7 +87,7 @@ begin
   BorderStyle := bsDialog;
   Position := poScreenCenter;
   ClientWidth := 640;
-  ClientHeight := 560;
+  ClientHeight := 590;
   Font.Name := 'Segoe UI';
   Font.Size := 9;
   FRuleNames := TStringList.Create;
@@ -115,34 +119,44 @@ begin
   FMode.Style := csDropDownList;
   FMode.SetBounds(240, 255, 250, 23);
 
-  FRulesLabel := AddLabel(12, 290);
+  FMediaLabel := AddLabel(12, 290);
+  FShowPhotos := TCheckBox.Create(Self);
+  FShowPhotos.Parent := Self;
+  FShowPhotos.SetBounds(240, 288, 170, 19);
+  FShowPhotos.OnClick := MediaClick;
+  FShowVideos := TCheckBox.Create(Self);
+  FShowVideos.Parent := Self;
+  FShowVideos.SetBounds(420, 288, 170, 19);
+  FShowVideos.OnClick := MediaClick;
+
+  FRulesLabel := AddLabel(12, 320);
   FRules := TCheckListBox.Create(Self);
   FRules.Parent := Self;
-  FRules.SetBounds(12, 310, 616, 70);
+  FRules.SetBounds(12, 340, 616, 70);
 
-  FDefaultLabel := AddLabel(12, 392);
+  FDefaultLabel := AddLabel(12, 422);
   FDefault := TComboBox.Create(Self);
   FDefault.Parent := Self;
   FDefault.Style := csDropDownList;
-  FDefault.SetBounds(240, 389, 250, 23);
+  FDefault.SetBounds(240, 419, 250, 23);
 
-  FToleranceLabel := AddLabel(12, 424);
-  FTolerance := AddEdit(240, 421, 60);
+  FToleranceLabel := AddLabel(12, 454);
+  FTolerance := AddEdit(240, 451, 60);
 
-  FHomeNameLabel := AddLabel(12, 456);
-  FHomeName := AddEdit(240, 453, 250);
-  FGeoLabel := AddLabel(12, 486);
-  FLat := AddEdit(240, 483, 90);
-  FLon := AddEdit(336, 483, 90);
-  FRadius := AddEdit(432, 483, 58);
+  FHomeNameLabel := AddLabel(12, 486);
+  FHomeName := AddEdit(240, 483, 250);
+  FGeoLabel := AddLabel(12, 516);
+  FLat := AddEdit(240, 513, 90);
+  FLon := AddEdit(336, 513, 90);
+  FRadius := AddEdit(432, 513, 58);
   FAuto := TCheckBox.Create(Self);
   FAuto.Parent := Self;
-  FAuto.SetBounds(500, 455, 130, 40);
+  FAuto.SetBounds(500, 485, 130, 40);
   FAuto.WordWrap := True;
 
-  FOk := AddButton(440, 522, 90, OkClick);
+  FOk := AddButton(440, 552, 90, OkClick);
   FOk.Default := True;
-  FCancel := AddButton(538, 522, 90, nil);
+  FCancel := AddButton(538, 552, 90, nil);
   FCancel.ModalResult := mrCancel;
   FCancel.Cancel := True;
   Load;
@@ -189,6 +203,9 @@ begin
   FAddFolder.Caption := L('Добавить папку...', 'Add folder...');
   FAddUrl.Caption := L('Добавить адрес (UNC/HTTP/FTP)...', 'Add address (UNC/HTTP/FTP)...');
   FRemove.Caption := L('Удалить', 'Remove');
+  FMediaLabel.Caption := L('Что показывать:', 'What to show:');
+  FShowPhotos.Caption := L('Показывать фото', 'Show photos');
+  FShowVideos.Caption := L('Показывать видео', 'Show videos');
   FSecondsLabel.Caption := L('Время показа одного файла, сек:', 'Display time of one file, sec:');
   FModeLabel.Caption := L('Режим выбора:', 'Selection mode:');
   FRulesLabel.Caption := L('Активные правила (для режима "По правилам"):', 'Active rules (for the "By rules" mode):');
@@ -220,6 +237,13 @@ begin
   for i := 0 to Min(Integer(High(vChecked)), Integer(FRules.Items.Count) - 1) do
     FRules.Checked[i] := vChecked[i];
   FDefault.ItemIndex := vDefaultIdx;
+end;
+
+{ At least one of "photos" / "videos" must always stay checked. }
+procedure TSettingsForm.MediaClick(Sender: TObject);
+begin
+  if not FShowPhotos.Checked and not FShowVideos.Checked then
+    (Sender as TCheckBox).Checked := True;
 end;
 
 procedure TSettingsForm.LangChange(Sender: TObject);
@@ -319,6 +343,8 @@ begin
     vIdx := 0;
   ApplyTexts;
   FMode.ItemIndex := Ord(Settings.Mode);
+  FShowPhotos.Checked := Settings.MediaTypes in [mtPhotos, mtBoth];
+  FShowVideos.Checked := Settings.MediaTypes in [mtVideos, mtBoth];
   for i := 0 to FRuleNames.Count - 1 do
     FRules.Checked[i] := Settings.ActiveRules.IndexOf(FRuleNames[i]) >= 0;
   FDefault.ItemIndex := vIdx;
@@ -347,6 +373,12 @@ begin
   if Settings.SlideSeconds < 1 then
     Settings.SlideSeconds := 1;
   Settings.Mode := TSelectionMode(FMode.ItemIndex);
+  if FShowPhotos.Checked and FShowVideos.Checked then
+    Settings.MediaTypes := mtBoth
+  else if FShowVideos.Checked then
+    Settings.MediaTypes := mtVideos
+  else
+    Settings.MediaTypes := mtPhotos;
   Settings.ActiveRules.Clear;
   for i := 0 to FRuleNames.Count - 1 do
     if FRules.Checked[i] then

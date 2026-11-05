@@ -51,6 +51,7 @@ begin
   FitToParent;
   FCatalog := TMediaCatalog.Create;
   FSampler := TQuickSampler.Create(FCatalog);
+  FSampler.PhotosOnly := True;
   FTimer := TTimer.Create(Self);
   FTimer.Interval := 200;
   FTimer.OnTimer := TimerTick;

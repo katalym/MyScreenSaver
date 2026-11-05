@@ -75,6 +75,8 @@ type
   TQuickSampler = class(TThread)
   private
     FCatalog: TMediaCatalog;
+    FPhotosOnly: Boolean;
+    function Wanted(AKind: TMediaKind): Boolean;
     function RandomLocal(const AColl: TMediaCollection; out AItem: TMediaItem): Boolean;
     function RandomHttp(const AColl: TMediaCollection; out AItem: TMediaItem): Boolean;
     function RandomItem(out AItem: TMediaItem): Boolean;
@@ -82,6 +84,8 @@ type
     procedure Execute; override;
   public
     constructor Create(ACatalog: TMediaCatalog);
+    { the preview can only show photos }
+    property PhotosOnly: Boolean read FPhotosOnly write FPhotosOnly;
   end;
 
   TScanThread = class(TThread)
@@ -103,6 +107,8 @@ type
   end;
 
 function MediaKindOfFile(const AName: string; out AKind: TMediaKind): Boolean;
+{ True if the kind is wanted by the setting "photos / videos / both". }
+function KindAllowed(AKind: TMediaKind): Boolean;
 { Returns a local file path for the item; downloads remote files into the cache. }
 function EnsureLocalFile(const AItem: TMediaItem): string;
 function GetMediaMeta(const AItem: TMediaItem): TMediaMeta;
@@ -152,6 +158,16 @@ begin
       Exit;
     end;
   Result := False;
+end;
+
+function KindAllowed(AKind: TMediaKind): Boolean;
+begin
+  case Settings.MediaTypes of
+    mtPhotos: Result := AKind = mkPhoto;
+    mtVideos: Result := AKind = mkVideo;
+  else
+    Result := True;
+  end;
 end;
 
 { TMediaItem }
@@ -422,8 +438,9 @@ begin
   end;
 end;
 
-{ Loads the previous scan result: the catalog becomes usable immediately. }
-procedure LoadCatalogCache(ACatalog: TMediaCatalog);
+{ Loads the previous scan result: the catalog becomes usable immediately.
+  Returns True if the file has duplicates / stale entries and should be rewritten (compacted). }
+function LoadCatalogCache(ACatalog: TMediaCatalog): Boolean;
 var
   vReader: TStreamReader;
   vLine: string;
@@ -432,8 +449,11 @@ var
   vColls: TArray<TMediaCollection>;
   vMeta: TMediaMeta;
   vKind: TMediaKind;
-  i, vCollIdx: Integer;
+  i, vCollIdx, vFileLines, vSkipped: Integer;
 begin
+  Result := False;
+  vFileLines := 0;
+  vSkipped := 0;
   if not FileExists(CatalogCachePath) then
     Exit;
   vColls := Settings.Collections.ToArray;
@@ -457,8 +477,12 @@ begin
                 vCollIdx := i;
                 Break;
               end;
+            Inc(vFileLines);
             if vCollIdx < 0 then
+            begin
+              Inc(vSkipped);
               Continue;
+            end;
             if vParts[2] = '1' then
               vKind := mkVideo
             else
@@ -484,6 +508,8 @@ begin
     ACatalog.AddRange(vItems);
     if ACatalog.Count > 0 then
       ACatalog.Ready := True;
+    // many more F lines than distinct files, or entries of removed collections
+    Result := (vSkipped > 0) or (vFileLines > ACatalog.Count + ACatalog.Count div 4);
   finally
     vItems.Free;
   end;
@@ -507,6 +533,14 @@ begin
   Result.Kind := AKind;
   Result.User := AColl.User;
   Result.Password := AColl.Password;
+end;
+
+function TQuickSampler.Wanted(AKind: TMediaKind): Boolean;
+begin
+  if FPhotosOnly then
+    Result := AKind = mkPhoto
+  else
+    Result := KindAllowed(AKind);
 end;
 
 function TQuickSampler.RandomLocal(const AColl: TMediaCollection; out AItem: TMediaItem): Boolean;
@@ -536,7 +570,7 @@ begin
             Continue;
           if (vSr.Attr and faDirectory) <> 0 then
             vDirs.Add(vSr.Name)
-          else if MediaKindOfFile(vSr.Name, vKind) and (vKind = mkPhoto) then
+          else if MediaKindOfFile(vSr.Name, vKind) and Wanted(vKind) then
             vFiles.Add(vSr.Name);
         until FindNext(vSr) <> 0;
       finally
@@ -548,7 +582,8 @@ begin
       vPick := Random(vTotal);
       if vPick < vFiles.Count then
       begin
-        AItem := MakeItem(AColl, vPath + vFiles[vPick], mkPhoto);
+        MediaKindOfFile(vFiles[vPick], vKind);
+        AItem := MakeItem(AColl, vPath + vFiles[vPick], vKind);
         Exit(True);
       end;
       vPath := vPath + vDirs[vPick - vFiles.Count] + PathDelim;
@@ -584,7 +619,7 @@ begin
       vPhotos.Clear;
       ListHttpDir(AColl, vUrl, vDirs, vFiles);
       for i := 0 to vFiles.Count - 1 do
-        if MediaKindOfFile(vFiles[i], vKind) and (vKind = mkPhoto) then
+        if MediaKindOfFile(vFiles[i], vKind) and Wanted(vKind) then
           vPhotos.Add(vFiles[i]);
       vTotal := vDirs.Count + vPhotos.Count;
       if vTotal = 0 then
@@ -592,7 +627,8 @@ begin
       vPick := Random(vTotal);
       if vPick < vPhotos.Count then
       begin
-        AItem := MakeItem(AColl, vPhotos[vPick], mkPhoto);
+        MediaKindOfFile(vPhotos[vPick], vKind);
+        AItem := MakeItem(AColl, vPhotos[vPick], vKind);
         Exit(True);
       end;
       vUrl := vDirs[vPick - vPhotos.Count];
@@ -880,6 +916,7 @@ procedure TScanThread.Execute;
 var
   vColl: TMediaCollection;
   vList: TArray<TMediaCollection>;
+  vCompact: Boolean;
 begin
   FCatalog.Scanning := True;
   try
@@ -888,7 +925,7 @@ begin
     FReachable := TDictionary<string, Boolean>.Create(TIStringComparer.Ordinal);
     FPending := TStringList.Create;
     // 1. the previous scan result is usable at once
-    LoadCatalogCache(FCatalog);
+    vCompact := LoadCatalogCache(FCatalog);
     // 2. refresh in the background: add new files, forget the removed ones
     vList := Settings.Collections.ToArray;
     for vColl in vList do
@@ -913,7 +950,7 @@ begin
     end;
     FlushPending;
     if not Terminated then
-      if FCatalog.RetainOnly(FSeen, FReachable) > 0 then
+      if (FCatalog.RetainOnly(FSeen, FReachable) > 0) or vCompact then
         RewriteCatalogCache(FCatalog);
   except
     // a failing scan must not crash the application

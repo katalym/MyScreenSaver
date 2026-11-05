@@ -21,11 +21,15 @@ type
 
   TSelectionMode = (smRandom, smRules);
 
+  { what to show: photos only, videos only, both }
+  TMediaTypes = (mtPhotos, mtVideos, mtBoth);
+
   TAppSettings = class
   public
     Collections: TList<TMediaCollection>;
     SlideSeconds: Integer;
     Mode: TSelectionMode;
+    MediaTypes: TMediaTypes;
     ActiveRules: TStringList;
     DefaultRule: string;
     DayTolerance: Integer;       // "on this day": +/- days
@@ -97,6 +101,7 @@ begin
   ActiveRules := TStringList.Create;
   SlideSeconds := 10;
   Mode := smRandom;
+  MediaTypes := mtBoth;
   DefaultRule := 'random';
   DayTolerance := 0;
   HomeRadiusKm := 50;
@@ -138,6 +143,12 @@ begin
     else
       Mode := smRandom;
     DefaultRule := vIni.ReadString('General', 'DefaultRule', DefaultRule);
+    if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'photos') then
+      MediaTypes := mtPhotos
+    else if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'videos') then
+      MediaTypes := mtVideos
+    else
+      MediaTypes := mtBoth;
     ActiveRules.CommaText := vIni.ReadString('General', 'ActiveRules', '');
 
     DayTolerance := vIni.ReadInteger('Rules', 'DayTolerance', DayTolerance);
@@ -185,6 +196,12 @@ begin
     else
       vIni.WriteString('General', 'Mode', 'random');
     vIni.WriteString('General', 'DefaultRule', DefaultRule);
+    case MediaTypes of
+      mtPhotos: vIni.WriteString('General', 'MediaTypes', 'photos');
+      mtVideos: vIni.WriteString('General', 'MediaTypes', 'videos');
+    else
+      vIni.WriteString('General', 'MediaTypes', 'both');
+    end;
     vIni.WriteString('General', 'Language', LanguageCode(Language));
     vIni.WriteString('General', 'ActiveRules', ActiveRules.CommaText);
 

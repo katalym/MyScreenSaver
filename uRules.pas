@@ -180,9 +180,28 @@ function TryRule(ACatalog: TMediaCatalog; ARule: TMediaRule; out AItem: TMediaIt
 const
   MaxTries = 30000;
 var
-  vCount, i: Integer;
+  vCount, i, vStart: Integer;
   vItem: TMediaItem;
   vMeta: TMediaMeta;
+
+  function Accept: Boolean;
+  begin
+    Result := False;
+    if not KindAllowed(vItem.Kind) then
+      Exit;
+    if ARule.NeedsMeta then
+    begin
+      if vItem.SourceKind in [skHttp, skFtp] then
+        Exit;
+      // cached metadata only: the picker must never read files (it runs in the UI thread)
+      if not TryGetCachedMeta(vItem, vMeta) then
+        Exit;
+      if not ARule.Accepts(vMeta) then
+        Exit;
+    end;
+    Result := True;
+  end;
+
 begin
   Result := False;
   vCount := ACatalog.Count;
@@ -191,18 +210,22 @@ begin
   for i := 1 to MaxTries do
   begin
     vItem := ACatalog.Get(Random(vCount));
-    if ARule.NeedsMeta then
+    if Accept then
     begin
-      if vItem.SourceKind in [skHttp, skFtp] then
-        Continue;
-      // cached metadata only: the picker must never read files (it runs in the UI thread)
-      if not TryGetCachedMeta(vItem, vMeta) then
-        Continue;
-      if not ARule.Accepts(vMeta) then
-        Continue;
+      AItem := vItem;
+      Exit(True);
     end;
-    AItem := vItem;
-    Exit(True);
+  end;
+  // rare matches (e.g. only a few videos among many photos): one pass over everything
+  vStart := Random(vCount);
+  for i := 0 to vCount - 1 do
+  begin
+    vItem := ACatalog.Get((vStart + i) mod vCount);
+    if Accept then
+    begin
+      AItem := vItem;
+      Exit(True);
+    end;
   end;
 end;
 

@@ -38,7 +38,8 @@ build.bat
 ### Конфигурация и язык
 
 Окно настроек (`/c` или клавиша **C**): коллекции (локальные, UNC, HTTP-листинг, FTP), время показа, режим
-(полностью случайный / по правилам), правила, **язык интерфейса: Русский (Russian) или English (Английский)**.
+(полностью случайный / по правилам), что показывать (флажки «Показывать фото» и «Показывать видео»; если
+отмечены оба, показываются оба типа; хотя бы один флажок всегда отмечен), правила, **язык интерфейса: Русский (Russian) или English (Английский)**.
 По умолчанию язык берётся из языка Windows.
 
 Файл настроек: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; ключ `Language=ru|en` в `[General]`).
@@ -109,7 +110,8 @@ the file is copied to the clipboard and the application is opened, you only have
 ### Configuration and language
 
 Settings dialog (`/c` or key **C**): collections (local, UNC, HTTP listing, FTP), display time, selection mode
-(fully random / by rules), rules, **interface language: Русский (Russian) or English (Английский)**.
+(fully random / by rules), what to show (check boxes "Show photos" and "Show videos"; if both are checked,
+both types are shown; at least one box always stays checked), rules, **interface language: Русский (Russian) or English (Английский)**.
 By default the language follows the Windows language.
 
 Settings file: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; key `Language=ru|en` in `[General]`).

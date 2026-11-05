@@ -44,6 +44,7 @@ type
     function HandleKey(AKey: Word; ARepeat: Boolean): Boolean;
     procedure TimerTick(Sender: TObject);
     procedure PlayerStateChange(ASender: TObject; ANewState: Integer);
+    procedure FitVideo;
     procedure PlayerError(Sender: TObject);
     procedure GoNext;
     procedure GoPrev;
@@ -64,6 +65,7 @@ type
     procedure CreateBlankForms;
   protected
     procedure DoShow; override;
+    procedure Resize; override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -529,8 +531,40 @@ begin
   FTimer.Enabled := not (FPaused or FInfoShown);
 end;
 
+{ Scales the video to the window keeping the aspect ratio (WMP shows it in its native size otherwise). }
+procedure TViewerForm.FitVideo;
+var
+  vW, vH, vDispW, vDispH: Integer;
+  vScale: Double;
+begin
+  if (FPlayer = nil) or (FVideoHost = nil) or not FVideoHost.Visible then
+    Exit;
+  if FPlayer.currentMedia = nil then
+    Exit;
+  vW := FPlayer.currentMedia.imageSourceWidth;
+  vH := FPlayer.currentMedia.imageSourceHeight;
+  if (vW <= 0) or (vH <= 0) then
+    Exit;
+  vScale := Min(FVideoHost.ClientWidth / vW, FVideoHost.ClientHeight / vH);
+  vDispW := Max(1, Integer(Round(vW * vScale)));
+  vDispH := Max(1, Integer(Round(vH * vScale)));
+  FPlayer.Align := alNone;
+  FPlayer.stretchToFit := True;
+  FPlayer.SetBounds((FVideoHost.ClientWidth - vDispW) div 2, (FVideoHost.ClientHeight - vDispH) div 2,
+    vDispW, vDispH);
+end;
+
+procedure TViewerForm.Resize;
+begin
+  inherited;
+  FitVideo;
+end;
+
 procedure TViewerForm.PlayerStateChange(ASender: TObject; ANewState: Integer);
 begin
+  // 3 = wmppsPlaying: the size of the video is known
+  if ANewState = 3 then
+    FitVideo;
   // 8 = wmppsMediaEnded
   if (ANewState = 8) and not FPaused and not FInfoShown then
   begin
