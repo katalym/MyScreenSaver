@@ -123,7 +123,7 @@ begin
   ActiveRules := TStringList.Create;
   InfoFields := TStringList.Create;
   CustomTags := TList<TInfoCustomTag>.Create;
-  SlideSeconds := 10;
+  SlideSeconds := 4;
   Mode := smRandom;
   MediaTypes := mtBoth;
   DefaultRule := 'random';
