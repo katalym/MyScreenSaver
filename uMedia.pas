@@ -412,6 +412,8 @@ end;
 
 procedure PutMetaCache(const ALocation: string; const AMeta: TMediaMeta);
 begin
+  if GMetaCache = nil then
+    Exit;
   GMetaLock.Enter;
   try
     GMetaCache.AddOrSetValue(ALocation, AMeta);
@@ -1030,6 +1032,9 @@ end;
 
 function TryGetCachedMeta(const AItem: TMediaItem; out AMeta: TMediaMeta): Boolean;
 begin
+  Result := False;
+  if GMetaCache = nil then
+    Exit;
   GMetaLock.Enter;
   try
     Result := GMetaCache.TryGetValue(AItem.Location, AMeta);
@@ -1094,6 +1099,8 @@ begin
       except
       end;
   end;
+  if GMetaCache = nil then
+    Exit;
   GMetaLock.Enter;
   try
     GMetaCache.AddOrSetValue(AItem.Location, Result);

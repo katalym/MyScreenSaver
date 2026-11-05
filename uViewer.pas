@@ -6,7 +6,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Generics.Collections,
-  Vcl.Controls, Vcl.Forms, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
+  Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
   WMPLib, uConfig, uMedia;
 
 type
@@ -25,7 +25,9 @@ type
     FVideoHost: TPanel;
     FPlayer: TWindowsMediaPlayer;
     FStatus: TLabel;
-    FInfo: TMemo;
+    FInfoPanel: TPanel;      // gray frame
+    FInfoInner: TPanel;      // dark background of the text
+    FInfoText: TMemo;        // read-only: text can be selected and copied
     FTimer: TTimer;
     FPaused: Boolean;
     FInfoShown: Boolean;
@@ -53,6 +55,8 @@ type
     procedure TogglePause;
     procedure ToggleInfo;
     procedure HideInfo;
+    procedure ShowInfoPanel(const AText: string);
+    procedure InfoDblClick(Sender: TObject);
     function BuildInfo: string;
     procedure DoShare;
     procedure ShareClick(Sender: TObject);
@@ -144,17 +148,28 @@ begin
   FStatus.Top := 24;
   FStatus.Visible := False;
 
-  FInfo := TMemo.Create(Self);
-  FInfo.Parent := Self;
-  FInfo.ReadOnly := True;
-  FInfo.BorderStyle := bsNone;
-  FInfo.Color := $202020;
-  FInfo.Font.Color := clWhite;
-  FInfo.Font.Name := 'Consolas';
-  FInfo.Font.Size := 13;
-  FInfo.ScrollBars := ssVertical;
-  FInfo.Visible := False;
-  FInfo.SetBounds(40, 40, 760, 520);
+  FInfoPanel := TPanel.Create(Self);
+  FInfoPanel.Parent := Self;
+  FInfoPanel.BevelOuter := bvNone;
+  FInfoPanel.ParentBackground := False;
+  FInfoPanel.Color := clGray;
+  FInfoPanel.Visible := False;
+  FInfoInner := TPanel.Create(Self);
+  FInfoInner.Parent := FInfoPanel;
+  FInfoInner.BevelOuter := bvNone;
+  FInfoInner.ParentBackground := False;
+  FInfoInner.Color := $202020;
+  FInfoText := TMemo.Create(Self);
+  FInfoText.Parent := FInfoInner;
+  FInfoText.BorderStyle := bsNone;
+  FInfoText.ReadOnly := True;
+  FInfoText.ScrollBars := ssNone;
+  FInfoText.Color := $202020;
+  FInfoText.Font.Color := clWhite;
+  FInfoText.Font.Name := 'Consolas';
+  FInfoText.Font.Size := 13;
+  FInfoText.Cursor := crIBeam;
+  FInfoText.OnDblClick := InfoDblClick;
 
   FTimer := TTimer.Create(Self);
   FTimer.Enabled := False;
@@ -167,13 +182,8 @@ end;
 destructor TViewerForm.Destroy;
 begin
   Application.OnMessage := nil;
-  // The process is ending: the scan thread is only asked to stop (no blocking wait).
-  if FScan <> nil then
-    FScan.Terminate;
-  if FQuick <> nil then
-    FQuick.Terminate;
-  if FIndexer <> nil then
-    FIndexer.Terminate;
+  // stop the background threads before the unit finalization frees their shared data
+  StopScan;
   FreeAndNil(FBlankForms);
   FreeAndNil(FHistory);
   inherited;
@@ -226,6 +236,13 @@ end;
 
 procedure TViewerForm.StopScan;
 begin
+  // ask all threads to stop first, then wait for them
+  if FIndexer <> nil then
+    FIndexer.Terminate;
+  if FQuick <> nil then
+    FQuick.Terminate;
+  if FScan <> nil then
+    FScan.Terminate;
   if FIndexer <> nil then
   begin
     FIndexer.Terminate;
@@ -262,13 +279,32 @@ begin
   case Msg.message of
     WM_KEYDOWN:
       begin
+        // Ctrl+A / Ctrl+C work on the info text (without a selection Ctrl+C copies everything)
+        if FInfoShown and (GetKeyState(VK_CONTROL) < 0) then
+        begin
+          if Msg.wParam = Ord('A') then
+          begin
+            FInfoText.SelectAll;
+            Handled := True;
+            Exit;
+          end;
+          if (Msg.wParam = Ord('C')) or (Msg.wParam = VK_INSERT) then
+          begin
+            if FInfoText.SelLength > 0 then
+              FInfoText.CopyToClipboard
+            else
+              Clipboard.AsText := FInfoText.Text;
+            Handled := True;
+            Exit;
+          end;
+        end;
         Handled := HandleKey(Msg.wParam, (Msg.lParam and $40000000) <> 0);
       end;
     WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN:
-      if FMode = vmScreenSaver then
+      if (FMode = vmScreenSaver) and not FInfoShown then
         Close;
     WM_MOUSEMOVE:
-      if FMode = vmScreenSaver then
+      if (FMode = vmScreenSaver) and not FInfoShown then
       begin
         GetCursorPos(vPt);
         if (Abs(vPt.X - FStartPt.X) > 8) or (Abs(vPt.Y - FStartPt.Y) > 8) then
@@ -548,11 +584,86 @@ begin
   if FCurrentItem.Kind = mkVideo then
     FPlayer.controls.pause;
   FStatus.Visible := False;
-  FInfo.Text := BuildInfo;
-  FInfo.Width := Min(900, ClientWidth - 80);
-  FInfo.Height := Min(600, ClientHeight - 80);
-  FInfo.Visible := True;
-  FInfo.BringToFront;
+  ShowInfoPanel(BuildInfo);
+end;
+
+{ Double click selects the value of the clicked line (everything after the "Caption:" part). }
+procedure TViewerForm.InfoDblClick(Sender: TObject);
+var
+  vPt: TPoint;
+  vIdx, vCum, vLen, vLine, vColon, vVal, i: Integer;
+  vText: string;
+begin
+  vPt := FInfoText.ScreenToClient(Mouse.CursorPos);
+  vIdx := LoWord(FInfoText.Perform(EM_CHARFROMPOS, 0, MakeLong(vPt.X, vPt.Y)));
+  vCum := 0;
+  vLine := -1;
+  for i := 0 to FInfoText.Lines.Count - 1 do
+  begin
+    vLen := Length(FInfoText.Lines[i]);
+    if vIdx <= vCum + vLen then
+    begin
+      vLine := i;
+      Break;
+    end;
+    vCum := vCum + vLen + 2;   // CRLF
+  end;
+  if vLine < 0 then
+    Exit;
+  vText := FInfoText.Lines[vLine];
+  if Trim(vText) = '' then
+    Exit;
+  vColon := Pos(':', vText);
+  vVal := 1;
+  if vColon > 0 then
+  begin
+    vVal := vColon + 1;
+    while (vVal <= Length(vText)) and (vText[vVal] = ' ') do
+      Inc(vVal);
+  end;
+  FInfoText.SelStart := vCum + vVal - 1;
+  FInfoText.SelLength := Length(TrimRight(vText)) - (vVal - 1);
+end;
+
+{ Shows the info text in a panel exactly as big as the text, centered on the screen. }
+procedure TViewerForm.ShowInfoPanel(const AText: string);
+const
+  Pad = 28;
+  Border = 2;
+var
+  vSl: TStringList;
+  vMaxW, vCap, vLines, i: Integer;
+begin
+  Canvas.Font.Assign(FInfoText.Font);
+  vSl := TStringList.Create;
+  try
+    vSl.Text := AText;
+    vMaxW := 0;
+    for i := 0 to vSl.Count - 1 do
+      vMaxW := Max(vMaxW, Canvas.TextWidth(vSl[i]));
+  finally
+    vSl.Free;
+  end;
+  vCap := ClientWidth - 2 * Pad - 80;
+  vMaxW := Min(vMaxW + 12, vCap);
+  FInfoText.WordWrap := True;
+  FInfoText.Text := AText.TrimRight;
+  FInfoText.SetBounds(Pad, Pad, vMaxW, 100);
+  // visual line count (includes wrapped lines) gives the exact height
+  vLines := Max(1, FInfoText.Perform(EM_GETLINECOUNT, 0, 0));
+  FInfoText.Height := vLines * Canvas.TextHeight('Wg') + 4;
+  FInfoInner.SetBounds(Border, Border, FInfoText.Width + 2 * Pad, FInfoText.Height + 2 * Pad);
+  FInfoPanel.SetBounds(0, 0, FInfoInner.Width + 2 * Border, FInfoInner.Height + 2 * Border);
+  FInfoPanel.Left := (ClientWidth - FInfoPanel.Width) div 2;
+  FInfoPanel.Top := (ClientHeight - FInfoPanel.Height) div 2;
+  FInfoPanel.Visible := True;
+  FInfoPanel.BringToFront;
+  if FMode = vmScreenSaver then
+    Screen.Cursor := crDefault;   // the mouse is needed to select text
+  FInfoText.SelStart := 0;
+  FInfoText.SelLength := 0;
+  if FInfoText.CanFocus then
+    FInfoText.SetFocus;
 end;
 
 procedure TViewerForm.HideInfo;
@@ -560,7 +671,14 @@ begin
   if not FInfoShown then
     Exit;
   FInfoShown := False;
-  FInfo.Visible := False;
+  FInfoPanel.Visible := False;
+  if FMode = vmScreenSaver then
+  begin
+    Screen.Cursor := crNone;
+    GetCursorPos(FStartPt);
+  end;
+  if CanFocus then
+    SetFocus;
   FPaused := False;
   if FCurrentItem.Kind = mkVideo then
   begin
@@ -612,6 +730,9 @@ begin
         Add('Производитель', vExif.Make);
         Add('Камера', vExif.Model);
         Add('Объектив', vExif.Lens);
+        Add('Теги (XP)', vExif.XPKeywords);
+        if not SameText(vExif.Keywords, vExif.XPKeywords) then
+          Add('Теги (IPTC/XMP)', vExif.Keywords);
         if vExif.HasDate then
           Add('Дата съёмки', DateTimeToStr(vExif.DateTaken));
         Add('Выдержка', vExif.Exposure);

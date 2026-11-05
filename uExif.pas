@@ -10,6 +10,8 @@ type
     Make: string;
     Model: string;
     Lens: string;
+    XPKeywords: string;   // EXIF XPKeywords (Windows "Tags")
+    Keywords: string;     // IPTC Keywords + XMP dc:subject
     HasDate: Boolean;
     DateTaken: TDateTime;
     Exposure: string;
@@ -29,7 +31,7 @@ function ReadExif(const AFileName: string): TExifInfo;
 implementation
 
 uses
-  System.SysUtils, System.Classes, System.Math;
+  System.SysUtils, System.Classes, System.Math, System.RegularExpressions;
 
 type
   TTiffReader = class
@@ -47,6 +49,7 @@ type
     function RationalAt(AValOff: Integer; AIndex: Integer): Double;
     function RationalTag(AIfd, ATag: Integer): Double;
     function IntTag(AIfd, ATag: Integer): Integer;
+    function UnicodeTag(AIfd, ATag: Integer): string;
     function GpsCoord(AIfd, ATagRef, ATagVal: Integer; out AValue: Double): Boolean;
     procedure Parse(var AInfo: TExifInfo);
   public
@@ -205,6 +208,25 @@ begin
     Result := Integer(U32(vEntry + 8));
 end;
 
+function TTiffReader.UnicodeTag(AIfd, ATag: Integer): string;
+var
+  vEntry, vOff, vLen, i: Integer;
+  vBytes: TBytes;
+begin
+  Result := '';
+  vEntry := FindEntry(AIfd, ATag);
+  if vEntry < 0 then
+    Exit;
+  vLen := Integer(U32(vEntry + 4));
+  if (vLen <= 1) or (vLen > 65536) then
+    Exit;
+  vOff := ValueOffset(vEntry);
+  SetLength(vBytes, vLen);
+  for i := 0 to vLen - 1 do
+    vBytes[i] := Byte(U8(vOff + i));
+  Result := Trim(TEncoding.Unicode.GetString(vBytes).TrimRight([#0]));
+end;
+
 function TTiffReader.GpsCoord(AIfd, ATagRef, ATagVal: Integer; out AValue: Double): Boolean;
 var
   vEntry, vOff: Integer;
@@ -235,6 +257,7 @@ begin
   AInfo.Make := AsciiTag(vIfd0, $010F);
   AInfo.Model := AsciiTag(vIfd0, $0110);
   AInfo.Orientation := IntTag(vIfd0, $0112);
+  AInfo.XPKeywords := UnicodeTag(vIfd0, $9C9E);
   vS := AsciiTag(vIfd0, $0132);
   if ParseExifDate(vS, AInfo.DateTaken) then
     AInfo.HasDate := True;
@@ -295,18 +318,130 @@ begin
   Parse(AInfo);
 end;
 
+{ ---- keywords: IPTC (APP13) and XMP (APP1) ---- }
+
+function DecodeText(const ABytes: TBytes): string;
+begin
+  if Length(ABytes) = 0 then
+    Exit('');
+  Result := TEncoding.UTF8.GetString(ABytes);
+  if Result.Contains(#$FFFD) then
+    Result := TEncoding.ANSI.GetString(ABytes);
+end;
+
+procedure AddKeyword(var AList: string; const AWord: string);
+var
+  vPart: string;
+  vWord: string;
+begin
+  vWord := Trim(AWord);
+  if vWord = '' then
+    Exit;
+  for vPart in AList.Split([';']) do
+    if SameText(Trim(vPart), vWord) then
+      Exit;
+  if AList <> '' then
+    AList := AList + '; ';
+  AList := AList + vWord;
+end;
+
+procedure ParseIptcRecords(const AData: TBytes; AStart, AEnd: Integer; var AKeywords: string);
+var
+  q, vRec, vSet, vLen: Integer;
+  vBytes: TBytes;
+begin
+  q := AStart;
+  while q + 5 <= AEnd do
+  begin
+    if AData[q] <> $1C then
+      Break;
+    vRec := AData[q + 1];
+    vSet := AData[q + 2];
+    vLen := (AData[q + 3] shl 8) or AData[q + 4];
+    if (vLen and $8000) <> 0 then
+      Break;
+    if q + 5 + vLen > AEnd then
+      Break;
+    if (vRec = 2) and (vSet = 25) then
+    begin
+      SetLength(vBytes, vLen);
+      if vLen > 0 then
+        Move(AData[q + 5], vBytes[0], vLen);
+      AddKeyword(AKeywords, DecodeText(vBytes));
+    end;
+    Inc(q, 5 + vLen);
+  end;
+end;
+
+{ AStart..AEnd: Photoshop image resource blocks ("8BIM") of an APP13 segment }
+procedure ParseIptc(const AData: TBytes; AStart, AEnd: Integer; var AKeywords: string);
+var
+  p, vId, vNameLen, vDataPos, vSize: Integer;
+begin
+  p := AStart;
+  while p + 12 <= AEnd do
+  begin
+    if not ((AData[p] = Ord('8')) and (AData[p + 1] = Ord('B')) and
+      (AData[p + 2] = Ord('I')) and (AData[p + 3] = Ord('M'))) then
+      Break;
+    vId := (AData[p + 4] shl 8) or AData[p + 5];
+    vNameLen := AData[p + 6];
+    vDataPos := p + 7 + vNameLen;
+    if ((1 + vNameLen) mod 2) = 1 then
+      Inc(vDataPos);
+    if vDataPos + 4 > AEnd then
+      Break;
+    vSize := (AData[vDataPos] shl 24) or (AData[vDataPos + 1] shl 16) or
+      (AData[vDataPos + 2] shl 8) or AData[vDataPos + 3];
+    Inc(vDataPos, 4);
+    if (vSize < 0) or (vDataPos + vSize > AEnd) then
+      Break;
+    if vId = $0404 then
+      ParseIptcRecords(AData, vDataPos, vDataPos + vSize, AKeywords);
+    p := vDataPos + vSize;
+    if Odd(vSize) then
+      Inc(p);
+  end;
+end;
+
+function XmlUnescape(const S: string): string;
+begin
+  Result := S.Replace('&lt;', '<').Replace('&gt;', '>').Replace('&quot;', '"')
+    .Replace('&apos;', Chr(39)).Replace('&amp;', '&');
+end;
+
+procedure ParseXmp(const AData: TBytes; AStart, AEnd: Integer; var AKeywords: string);
+var
+  vBytes: TBytes;
+  vXml: string;
+  vBag, vItem: TMatch;
+begin
+  if AEnd <= AStart then
+    Exit;
+  SetLength(vBytes, AEnd - AStart);
+  Move(AData[AStart], vBytes[0], Length(vBytes));
+  vXml := TEncoding.UTF8.GetString(vBytes);
+  vBag := TRegEx.Match(vXml, '<dc:subject>(.*?)</dc:subject>', [roSingleLine]);
+  if not vBag.Success then
+    Exit;
+  for vItem in TRegEx.Matches(vBag.Groups[1].Value, '<rdf:li[^>]*>(.*?)</rdf:li>', [roSingleLine]) do
+    AddKeyword(AKeywords, XmlUnescape(vItem.Groups[1].Value));
+end;
+
 function ReadExif(const AFileName: string): TExifInfo;
 var
   vStream: TFileStream;
   vData: TBytes;
   vSize, vPos, vLen, vMarker: Integer;
   vReader: TTiffReader;
+  vKeywords: string;
 begin
   Result := Default(TExifInfo);
+  vKeywords := '';
   try
     vStream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyNone);
     try
-      vSize := Integer(Min(vStream.Size, 128 * 1024));
+      vSize := Integer(Min(vStream.Size, 256 * 1024));
       SetLength(vData, vSize);
       if vSize > 0 then
         vStream.ReadBuffer(vData[0], vSize);
@@ -334,10 +469,18 @@ begin
         finally
           vReader.Free;
         end;
-        Break;
-      end;
+      end
+      else if (vMarker = $E1) and (vPos + 4 + 29 < vSize) and
+        (TEncoding.ASCII.GetString(vData, vPos + 4, 28) = 'http://ns.adobe.com/xap/1.0/') then
+        ParseXmp(vData, vPos + 4 + 29, Min(vPos + 2 + vLen, vSize), vKeywords)
+      else if (vMarker = $ED) and (vPos + 4 + 14 < vSize) and
+        (TEncoding.ASCII.GetString(vData, vPos + 4, 13) = 'Photoshop 3.0') then
+        ParseIptc(vData, vPos + 4 + 14, Min(vPos + 2 + vLen, vSize), vKeywords);
       Inc(vPos, 2 + vLen);
     end;
+    Result.Keywords := vKeywords;
+    if (vKeywords <> '') or (Result.XPKeywords <> '') then
+      Result.Valid := True;
   except
     Result := Default(TExifInfo);
   end;
