@@ -11,16 +11,14 @@ uses
 type
   TShareTarget = (stEmail, stTelegram, stWhatsApp, stFacebook, stClipboard);
 
-const
-  ShareTargetTitles: array[TShareTarget] of string =
-    ('Электронная почта', 'Telegram', 'WhatsApp', 'Facebook', 'Только скопировать файл');
+function ShareTargetTitle(ATarget: TShareTarget): string;
 
 procedure ShareFile(ATarget: TShareTarget; const AFileName: string);
 
 implementation
 
 uses
-  Winapi.Windows, Winapi.ShellAPI, Winapi.ShlObj, Winapi.Messages, System.SysUtils, Vcl.Clipbrd;
+  Winapi.Windows, Winapi.ShellAPI, Winapi.ShlObj, Winapi.Messages, System.SysUtils, Vcl.Clipbrd, uLang;
 
 type
   TMapiFileDesc = record
@@ -54,6 +52,18 @@ type
 const
   MAPI_LOGON_UI = $00000001;
   MAPI_DIALOG = $00000008;
+
+function ShareTargetTitle(ATarget: TShareTarget): string;
+begin
+  case ATarget of
+    stEmail: Result := L('Электронная почта', 'E-mail');
+    stTelegram: Result := 'Telegram';
+    stWhatsApp: Result := 'WhatsApp';
+    stFacebook: Result := 'Facebook';
+  else
+    Result := L('Только скопировать файл', 'Only copy the file');
+  end;
+end;
 
 procedure CopyFileToClipboard(const AFileName: string);
 var
@@ -97,11 +107,11 @@ var
 begin
   vLib := LoadLibrary('mapi32.dll');
   if vLib = 0 then
-    raise Exception.Create('MAPI не доступен: почтовый клиент не установлен.');
+    raise Exception.Create(L('MAPI не доступен: почтовый клиент не установлен.', 'MAPI is not available: no mail client is installed.'));
   try
     vProc := GetProcAddress(vLib, 'MAPISendMail');
     if not Assigned(vProc) then
-      raise Exception.Create('MAPI не доступен.');
+      raise Exception.Create(L('MAPI не доступен.', 'MAPI is not available.'));
     vPath := AnsiString(AFileName);
     vName := AnsiString(ExtractFileName(AFileName));
     vSubject := vName;

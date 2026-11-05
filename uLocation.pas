@@ -49,7 +49,7 @@ var
   vAddr: TJSONObject;
   vParts: TStringList;
 begin
-  vKey := Format('%.4f,%.4f', [ALat, ALon], TFormatSettings.Invariant);
+  vKey := Format('%.4f,%.4f,%s', [ALat, ALon, ALanguage], TFormatSettings.Invariant);
   GGeoLock.Enter;
   try
     if GGeoCache.TryGetValue(vKey, Result) then

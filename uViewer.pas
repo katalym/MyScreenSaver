@@ -62,7 +62,6 @@ type
     procedure ShareClick(Sender: TObject);
     procedure OpenSettings;
     procedure CreateBlankForms;
-    procedure LoadOrientedImage(const APath: string; AOrientation: Integer);
   protected
     procedure DoShow; override;
   public
@@ -73,15 +72,60 @@ type
 var
   GViewerMode: TViewerMode = vmStandalone;
 
+{ Loads a photo into a TPicture applying the EXIF orientation. }
+procedure LoadPhotoPicture(APicture: TPicture; const APath: string);
+
 implementation
 
 uses
   System.IOUtils, System.DateUtils, System.StrUtils, System.Math, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
-  Winapi.Wincodec, uLocation, uRules, uExif, uShare, uSettingsForm;
+  Winapi.Wincodec, uLang, uLocation, uRules, uExif, uShare, uSettingsForm;
 
 const
   HistoryLimit = 100000;
   MaxFailures = 25;
+
+procedure LoadOrientedPicture(APicture: TPicture; const APath: string; AOrientation: Integer);
+var
+  vWic: TWICImage;
+  vFactory: IWICImagingFactory;
+  vRot: IWICBitmapFlipRotator;
+  vBmp: IWICBitmap;
+  vOpt: WICBitmapTransformOptions;
+begin
+  vWic := TWICImage.Create;
+  try
+    vWic.LoadFromFile(APath);
+    case AOrientation of
+      3: vOpt := WICBitmapTransformRotate180;
+      6: vOpt := WICBitmapTransformRotate90;
+      8: vOpt := WICBitmapTransformRotate270;
+    else
+      vOpt := WICBitmapTransformRotate0;
+    end;
+    if vOpt <> WICBitmapTransformRotate0 then
+    begin
+      vFactory := vWic.ImagingFactory;
+      vFactory.CreateBitmapFlipRotator(vRot);
+      vRot.Initialize(vWic.Handle, vOpt);
+      vFactory.CreateBitmapFromSource(vRot, WICBitmapCacheOnLoad, vBmp);
+      vWic.Handle := vBmp;
+    end;
+    APicture.Assign(vWic);
+  finally
+    vWic.Free;
+  end;
+end;
+
+procedure LoadPhotoPicture(APicture: TPicture; const APath: string);
+var
+  vOrient: Integer;
+begin
+  vOrient := 0;
+  if MatchText(LowerCase(ExtractFileExt(APath)), ['.jpg', '.jpeg', '.jfif']) then
+    vOrient := ReadExif(APath).Orientation;
+  LoadOrientedPicture(APicture, APath, vOrient);
+end;
 
 { TViewerForm }
 
@@ -197,7 +241,7 @@ begin
     CreateBlankForms;
   if not FTimer.Enabled then
   begin
-    ShowMessage('Загрузка списка файлов...');
+    ShowMessage(L('Загрузка списка файлов...', 'Loading the file list...'));
     FTimer.Interval := 300;
     FTimer.Enabled := True;
     FHasCurrent := False;
@@ -380,11 +424,11 @@ begin
   if not PickMedia(FCatalog, vItem) then
   begin
     if FCatalog.Scanning then
-      ShowMessage('Загрузка списка файлов...')
+      ShowMessage(L('Загрузка списка файлов...', 'Loading the file list...'))
     else if Settings.Collections.Count = 0 then
-      ShowMessage('Нет медиаколлекций. Настройте приложение (клавиша C).')
+      ShowMessage(L('Нет медиаколлекций. Настройте приложение (клавиша C).', 'No media collections. Configure the application (key C).'))
     else
-      ShowMessage('Медиафайлы не найдены.');
+      ShowMessage(L('Медиафайлы не найдены.', 'No media files found.'));
     FTimer.Interval := IfThen(FCatalog.Scanning, 200, 1500);
     FTimer.Enabled := True;
     Exit;
@@ -459,38 +503,6 @@ begin
   end;
 end;
 
-procedure TViewerForm.LoadOrientedImage(const APath: string; AOrientation: Integer);
-var
-  vWic: TWICImage;
-  vFactory: IWICImagingFactory;
-  vRot: IWICBitmapFlipRotator;
-  vBmp: IWICBitmap;
-  vOpt: WICBitmapTransformOptions;
-begin
-  vWic := TWICImage.Create;
-  try
-    vWic.LoadFromFile(APath);
-    case AOrientation of
-      3: vOpt := WICBitmapTransformRotate180;
-      6: vOpt := WICBitmapTransformRotate90;
-      8: vOpt := WICBitmapTransformRotate270;
-    else
-      vOpt := WICBitmapTransformRotate0;
-    end;
-    if vOpt <> WICBitmapTransformRotate0 then
-    begin
-      vFactory := vWic.ImagingFactory;
-      vFactory.CreateBitmapFlipRotator(vRot);
-      vRot.Initialize(vWic.Handle, vOpt);
-      vFactory.CreateBitmapFromSource(vRot, WICBitmapCacheOnLoad, vBmp);
-      vWic.Handle := vBmp;
-    end;
-    FImage.Picture.Assign(vWic);
-  finally
-    vWic.Free;
-  end;
-end;
-
 procedure TViewerForm.ShowPhoto(const APath: string; const AItem: TMediaItem);
 var
   vOrient: Integer;
@@ -498,7 +510,7 @@ begin
   vOrient := 0;
   if MatchText(LowerCase(ExtractFileExt(APath)), ['.jpg', '.jpeg', '.jfif']) then
     vOrient := ReadExif(APath).Orientation;
-  LoadOrientedImage(APath, vOrient);
+  LoadOrientedPicture(FImage.Picture, APath, vOrient);
   FVideoHost.Visible := False;
   FImage.Visible := True;
   ArmTimer;
@@ -552,7 +564,7 @@ begin
     FTimer.Enabled := False;
     if FCurrentItem.Kind = mkVideo then
       FPlayer.controls.pause;
-    FStatus.Caption := 'Пауза';
+    FStatus.Caption := L('Пауза', 'Paused');
     FStatus.Visible := True;
     FStatus.BringToFront;
   end
@@ -707,68 +719,68 @@ var
 begin
   vSl := TStringList.Create;
   try
-    Add('Файл', FCurrentItem.DisplayName);
-    Add('Коллекция', FCurrentItem.Collection);
-    Add('Расположение', FCurrentItem.Location);
+    Add(L('Файл', 'File'), FCurrentItem.DisplayName);
+    Add(L('Коллекция', 'Collection'), FCurrentItem.Collection);
+    Add(L('Расположение', 'Location'), FCurrentItem.Location);
     if (FCurrentPath <> '') and FileExists(FCurrentPath) then
     begin
       vSize := TFile.GetSize(FCurrentPath);
-      Add('Размер', Format('%s (%d байт)', [FormatFloat('#,##0.0', vSize / 1048576) + ' МБ', vSize]));
-      Add('Дата создания', DateTimeToStr(TFile.GetCreationTime(FCurrentPath)));
-      Add('Дата изменения', DateTimeToStr(TFile.GetLastWriteTime(FCurrentPath)));
+      Add(L('Размер', 'Size'), Format('%s (%d %s)', [FormatFloat('#,##0.0', vSize / 1048576) + L(' МБ', ' MB'), vSize, L('байт', 'bytes')]));
+      Add(L('Дата создания', 'Created'), DateTimeToStr(TFile.GetCreationTime(FCurrentPath)));
+      Add(L('Дата изменения', 'Modified'), DateTimeToStr(TFile.GetLastWriteTime(FCurrentPath)));
     end;
     if FCurrentItem.Kind = mkPhoto then
     begin
-      Add('Тип', 'Фотография');
+      Add(L('Тип', 'Type'), L('Фотография', 'Photo'));
       if FImage.Picture.Width > 0 then
-        Add('Разрешение', Format('%d x %d', [FImage.Picture.Width, FImage.Picture.Height]));
+        Add(L('Разрешение', 'Resolution'), Format('%d x %d', [FImage.Picture.Width, FImage.Picture.Height]));
       vExif := ReadExif(FCurrentPath);
       if vExif.Valid then
       begin
         vSl.Add('');
         vSl.Add('--- EXIF ---');
-        Add('Производитель', vExif.Make);
-        Add('Камера', vExif.Model);
-        Add('Объектив', vExif.Lens);
-        Add('Теги (XP)', vExif.XPKeywords);
+        Add(L('Производитель', 'Make'), vExif.Make);
+        Add(L('Камера', 'Camera'), vExif.Model);
+        Add(L('Объектив', 'Lens'), vExif.Lens);
+        Add(L('Теги (XP)', 'Tags (XP)'), vExif.XPKeywords);
         if not SameText(vExif.Keywords, vExif.XPKeywords) then
-          Add('Теги (IPTC/XMP)', vExif.Keywords);
+          Add(L('Теги (IPTC/XMP)', 'Tags (IPTC/XMP)'), vExif.Keywords);
         if vExif.HasDate then
-          Add('Дата съёмки', DateTimeToStr(vExif.DateTaken));
-        Add('Выдержка', vExif.Exposure);
-        Add('Диафрагма', vExif.FNumber);
+          Add(L('Дата съёмки', 'Date taken'), DateTimeToStr(vExif.DateTaken));
+        Add(L('Выдержка', 'Exposure'), vExif.Exposure);
+        Add(L('Диафрагма', 'Aperture'), vExif.FNumber);
         Add('ISO', vExif.ISO);
-        Add('Фокусное', vExif.FocalLength);
+        Add(L('Фокусное', 'Focal length'), vExif.FocalLength);
         if vExif.HasGps then
         begin
           Add('GPS', Format('%.6f, %.6f', [vExif.Lat, vExif.Lon],
             TFormatSettings.Invariant));
           Screen.Cursor := crHourGlass;
           try
-            vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, Settings.GeoLanguage);
+            vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
           finally
             Screen.Cursor := IfThen(FMode = vmScreenSaver, crNone, crDefault);
           end;
           if vPlace <> '' then
-            Add('Место', vPlace)
+            Add(L('Место', 'Place'), vPlace)
           else
-            Add('Место', '(не удалось определить — нет интернета?)');
+            Add(L('Место', 'Place'), L('(не удалось определить — нет интернета?)', '(could not be determined — no internet?)'));
         end;
       end;
     end
     else
     begin
-      Add('Тип', 'Видео');
+      Add(L('Тип', 'Type'), L('Видео', 'Video'));
       if FPlayer.currentMedia <> nil then
       begin
-        Add('Длительность', FPlayer.currentMedia.durationString);
+        Add(L('Длительность', 'Duration'), FPlayer.currentMedia.durationString);
         if FPlayer.currentMedia.imageSourceWidth > 0 then
-          Add('Разрешение', Format('%d x %d', [FPlayer.currentMedia.imageSourceWidth,
+          Add(L('Разрешение', 'Resolution'), Format('%d x %d', [FPlayer.currentMedia.imageSourceWidth,
             FPlayer.currentMedia.imageSourceHeight]));
       end;
       vMeta := GetMediaMeta(FCurrentItem);
       if vMeta.HasDate then
-        Add('Дата (файл)', DateTimeToStr(vMeta.Date));
+        Add(L('Дата (файл)', 'Date (file)'), DateTimeToStr(vMeta.Date));
     end;
     Result := vSl.Text;
   finally
@@ -794,7 +806,7 @@ begin
     for vTarget := Low(TShareTarget) to High(TShareTarget) do
     begin
       vItem := TMenuItem.Create(vMenu);
-      vItem.Caption := ShareTargetTitles[vTarget];
+      vItem.Caption := ShareTargetTitle(vTarget);
       vItem.Tag := Ord(vTarget);
       vItem.OnClick := ShareClick;
       vMenu.Items.Add(vItem);
@@ -818,7 +830,7 @@ begin
     ShareFile(TShareTarget((Sender as TMenuItem).Tag), FCurrentPath);
   except
     on E: Exception do
-      Application.MessageBox(PChar(E.Message), 'Поделиться', MB_OK or MB_ICONWARNING);
+      Application.MessageBox(PChar(E.Message), PChar(L('Поделиться', 'Share')), MB_OK or MB_ICONWARNING);
   end;
 end;
 

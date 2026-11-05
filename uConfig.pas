@@ -5,7 +5,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Generics.Collections;
+  System.SysUtils, System.Classes, System.Generics.Collections, uLang;
 
 type
   TSourceKind = (skLocal, skNetwork, skHttp, skFtp);
@@ -34,7 +34,7 @@ type
     HomeLon: Double;
     HomeRadiusKm: Double;
     AutoLocate: Boolean;         // detect location by IP (off by default)
-    GeoLanguage: string;         // language of place names (en, ru, ...)
+    Language: TLanguage;         // user interface language (also used for place names)
     // runtime location (set by auto-detection)
     CurLat: Double;
     CurLon: Double;
@@ -101,7 +101,8 @@ begin
   DayTolerance := 0;
   HomeRadiusKm := 50;
   AutoLocate := False;
-  GeoLanguage := 'en';
+  Language := DefaultLanguage;
+  SetLanguage(Language);
 end;
 
 destructor TAppSettings.Destroy;
@@ -145,7 +146,8 @@ begin
     HomeLon := ReadFloat(vIni, 'Rules', 'HomeLon', 0);
     HomeRadiusKm := ReadFloat(vIni, 'Rules', 'HomeRadiusKm', HomeRadiusKm);
     AutoLocate := vIni.ReadBool('Rules', 'AutoLocate', False);
-    GeoLanguage := vIni.ReadString('General', 'GeoLanguage', GeoLanguage);
+    Language := LanguageFromCode(vIni.ReadString('General', 'Language', ''), DefaultLanguage);
+    SetLanguage(Language);
 
     Collections.Clear;
     vCount := vIni.ReadInteger('Collections', 'Count', 0);
@@ -183,7 +185,7 @@ begin
     else
       vIni.WriteString('General', 'Mode', 'random');
     vIni.WriteString('General', 'DefaultRule', DefaultRule);
-    vIni.WriteString('General', 'GeoLanguage', GeoLanguage);
+    vIni.WriteString('General', 'Language', LanguageCode(Language));
     vIni.WriteString('General', 'ActiveRules', ActiveRules.CommaText);
 
     vIni.WriteInteger('Rules', 'DayTolerance', DayTolerance);

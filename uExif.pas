@@ -31,7 +31,7 @@ function ReadExif(const AFileName: string): TExifInfo;
 implementation
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.RegularExpressions;
+  System.SysUtils, System.Classes, System.Math, System.RegularExpressions, uLang;
 
 type
   TTiffReader = class
@@ -273,9 +273,9 @@ begin
     if vExp > 0 then
     begin
       if vExp < 1 then
-        AInfo.Exposure := Format('1/%d с', [Round(1 / vExp)])
+        AInfo.Exposure := Format('1/%d', [Round(1 / vExp)]) + L(' с', ' s')
       else
-        AInfo.Exposure := FormatFloat('0.#', vExp) + ' с';
+        AInfo.Exposure := FormatFloat('0.#', vExp) + L(' с', ' s');
     end;
     vExp := RationalTag(vExif, $829D);
     if vExp > 0 then
@@ -284,7 +284,7 @@ begin
       AInfo.ISO := IntToStr(IntTag(vExif, $8827));
     vExp := RationalTag(vExif, $920A);
     if vExp > 0 then
-      AInfo.FocalLength := FormatFloat('0.#', vExp) + ' мм';
+      AInfo.FocalLength := FormatFloat('0.#', vExp) + L(' мм', ' mm');
     AInfo.Width := IntTag(vExif, $A002);
     AInfo.Height := IntTag(vExif, $A003);
     AInfo.Lens := AsciiTag(vExif, $A434);

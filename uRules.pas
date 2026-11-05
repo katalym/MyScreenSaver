@@ -28,7 +28,7 @@ function PickMedia(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
 implementation
 
 uses
-  System.DateUtils, uLocation;
+  System.DateUtils, uLocation, uLang;
 
 type
   TRandomRule = class(TMediaRule)
@@ -72,7 +72,7 @@ end;
 
 function TRandomRule.Title: string;
 begin
-  Result := 'Случайный файл';
+  Result := L('Случайный файл', 'Random file');
 end;
 
 function TRandomRule.NeedsMeta: Boolean;
@@ -94,7 +94,7 @@ end;
 
 function TOnThisDayRule.Title: string;
 begin
-  Result := 'В этот день в прошлые годы';
+  Result := L('В этот день в прошлые годы', 'On this day in previous years');
 end;
 
 function TOnThisDayRule.Accepts(const AMeta: TMediaMeta): Boolean;
@@ -123,7 +123,7 @@ end;
 
 function TNearLocationRule.Title: string;
 begin
-  Result := 'Снято рядом с текущим местом';
+  Result := L('Снято рядом с текущим местом', 'Taken near the current place');
 end;
 
 function TNearLocationRule.Accepts(const AMeta: TMediaMeta): Boolean;
