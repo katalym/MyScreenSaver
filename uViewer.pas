@@ -213,6 +213,7 @@ begin
   FInfoText.Font.Name := 'Consolas';
   FInfoText.Font.Size := 13;
   FInfoText.Cursor := crIBeam;
+  FInfoText.WordWrap := True;
   FInfoText.OnDblClick := InfoDblClick;
 
   FTimer := TTimer.Create(Self);
@@ -342,7 +343,7 @@ begin
             Exit;
           end;
         end;
-        Handled := HandleKey(Msg.wParam, (Msg.lParam and $40000000) <> 0);
+        Handled := HandleKey(Word(Msg.wParam), (Msg.lParam and $40000000) <> 0);
       end;
     WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN:
       if (FMode = vmScreenSaver) and not FInfoShown then
@@ -404,7 +405,7 @@ begin
   FTimer.Enabled := False;
   if FPaused or FInfoShown then
     Exit;
-  FTimer.Interval := Max(1, Settings.SlideSeconds) * 1000;
+  FTimer.Interval := Cardinal(Max(1, Settings.SlideSeconds) * 1000);
   FTimer.Enabled := True;
 end;
 
@@ -429,14 +430,14 @@ begin
       ShowMessage(L('Нет медиаколлекций. Настройте приложение (клавиша C).', 'No media collections. Configure the application (key C).'))
     else
       ShowMessage(L('Медиафайлы не найдены.', 'No media files found.'));
-    FTimer.Interval := IfThen(FCatalog.Scanning, 200, 1500);
+    FTimer.Interval := Cardinal(IfThen(FCatalog.Scanning, 200, 1500));
     FTimer.Enabled := True;
     Exit;
   end;
   FHistory.Add(vItem);
   if FHistory.Count > HistoryLimit then
     FHistory.DeleteRange(0, FHistory.Count - HistoryLimit);
-  FHistPos := FHistory.Count - 1;
+  FHistPos := Integer(FHistory.Count) - 1;
   ShowCurrent;
 end;
 
@@ -471,7 +472,7 @@ begin
   FHasCurrent := True;
   FTimer.Enabled := False;
   FPlayer.controls.stop;
-  Screen.Cursor := IfThen(FMode = vmScreenSaver, crNone, crHourGlass);
+  Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crHourGlass));
   try
     vPath := EnsureLocalFile(vItem);
   finally
@@ -484,7 +485,7 @@ begin
     Inc(FFailures);
     FHistory.Delete(FHistPos);
     Dec(FHistPos);
-    FTimer.Interval := IfThen(FFailures > MaxFailures, 3000, 10);
+    FTimer.Interval := Cardinal(IfThen(FFailures > MaxFailures, 3000, 10));
     FTimer.Enabled := True;
     Exit;
   end;
@@ -498,7 +499,7 @@ begin
     Inc(FFailures);
     FHistory.Delete(FHistPos);
     Dec(FHistPos);
-    FTimer.Interval := IfThen(FFailures > MaxFailures, 3000, 10);
+    FTimer.Interval := Cardinal(IfThen(FFailures > MaxFailures, 3000, 10));
     FTimer.Enabled := True;
   end;
 end;
@@ -607,7 +608,7 @@ var
   vText: string;
 begin
   vPt := FInfoText.ScreenToClient(Mouse.CursorPos);
-  vIdx := LoWord(FInfoText.Perform(EM_CHARFROMPOS, 0, MakeLong(vPt.X, vPt.Y)));
+  vIdx := LoWord(FInfoText.Perform(EM_CHARFROMPOS, 0, MakeLong(Word(vPt.X), Word(vPt.Y))));
   vCum := 0;
   vLine := -1;
   for i := 0 to FInfoText.Lines.Count - 1 do
@@ -644,26 +645,40 @@ const
   Border = 2;
 var
   vSl: TStringList;
-  vMaxW, vCap, vLines, i: Integer;
+  vMaxW, vCap, vHeight, vLineH, i: Integer;
+  vRect: TRect;
 begin
   Canvas.Font.Assign(FInfoText.Font);
+  vLineH := Canvas.TextHeight('Wg');
   vSl := TStringList.Create;
   try
-    vSl.Text := AText;
+    vSl.Text := AText.TrimRight;
     vMaxW := 0;
     for i := 0 to vSl.Count - 1 do
       vMaxW := Max(vMaxW, Canvas.TextWidth(vSl[i]));
+    vCap := ClientWidth - 2 * Pad - 80;
+    vMaxW := Min(vMaxW + 6, vCap);
+    // height from the text itself (long lines wrap): independent of the state of the memo window
+    vHeight := 0;
+    for i := 0 to vSl.Count - 1 do
+    begin
+      if vSl[i] = '' then
+        Inc(vHeight, vLineH)
+      else
+      begin
+        vRect := Rect(0, 0, vMaxW, 0);
+        DrawText(Canvas.Handle, PChar(vSl[i]), -1, vRect,
+          DT_CALCRECT or DT_WORDBREAK or DT_NOPREFIX or DT_EXPANDTABS);
+        Inc(vHeight, Max(vLineH, vRect.Bottom));
+      end;
+    end;
   finally
     vSl.Free;
   end;
-  vCap := ClientWidth - 2 * Pad - 80;
-  vMaxW := Min(vMaxW + 12, vCap);
-  FInfoText.WordWrap := True;
   FInfoText.Text := AText.TrimRight;
-  FInfoText.SetBounds(Pad, Pad, vMaxW, 100);
-  // visual line count (includes wrapped lines) gives the exact height
-  vLines := Max(1, FInfoText.Perform(EM_GETLINECOUNT, 0, 0));
-  FInfoText.Height := vLines * Canvas.TextHeight('Wg') + 4;
+  FInfoText.SetBounds(Pad, Pad, vMaxW, vHeight + 4);
+  FInfoText.HandleNeeded;
+  FInfoText.Perform(EM_SETMARGINS, EC_LEFTMARGIN or EC_RIGHTMARGIN, 0);
   FInfoInner.SetBounds(Border, Border, FInfoText.Width + 2 * Pad, FInfoText.Height + 2 * Pad);
   FInfoPanel.SetBounds(0, 0, FInfoInner.Width + 2 * Border, FInfoInner.Height + 2 * Border);
   FInfoPanel.Left := (ClientWidth - FInfoPanel.Width) div 2;
@@ -759,7 +774,7 @@ begin
           try
             vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
           finally
-            Screen.Cursor := IfThen(FMode = vmScreenSaver, crNone, crDefault);
+            Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
           end;
           if vPlace <> '' then
             Add(L('Место', 'Place'), vPlace)

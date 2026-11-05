@@ -205,7 +205,7 @@ function TMediaCatalog.QuickCount: Integer;
 begin
   FLock.Enter;
   try
-    Result := FQuick.Count;
+    Result := Integer(FQuick.Count);
   finally
     FLock.Leave;
   end;
@@ -226,7 +226,7 @@ begin
   try
     if not FIndex.ContainsKey(AItem.Location) then
     begin
-      FIndex.Add(AItem.Location, FItems.Count);
+      FIndex.Add(AItem.Location, Integer(FItems.Count));
       FItems.Add(AItem);
     end;
   finally
@@ -253,7 +253,7 @@ begin
     for vItem in AItems do
       if not FIndex.ContainsKey(vItem.Location) then
       begin
-        FIndex.Add(vItem.Location, FItems.Count);
+        FIndex.Add(vItem.Location, Integer(FItems.Count));
         FItems.Add(vItem);
       end;
   finally
@@ -291,7 +291,7 @@ begin
       FIndex.Clear;
       for vItem in vKept do
       begin
-        FIndex.Add(vItem.Location, FItems.Count);
+        FIndex.Add(vItem.Location, Integer(FItems.Count));
         FItems.Add(vItem);
       end;
     end;
@@ -305,7 +305,7 @@ function TMediaCatalog.Count: Integer;
 begin
   FLock.Enter;
   try
-    Result := FItems.Count;
+    Result := Integer(FItems.Count);
   finally
     FLock.Leave;
   end;
@@ -451,7 +451,7 @@ begin
           if vParts[0] = 'F' then
           begin
             vCollIdx := -1;
-            for i := 0 to High(vColls) do
+            for i := 0 to Integer(High(vColls)) do
               if vColls[i].Enabled and vParts[1].StartsWith(vColls[i].Location, True) then
               begin
                 vCollIdx := i;
@@ -619,7 +619,7 @@ begin
         vUsable.Add(vColl);
     if vUsable.Count = 0 then
       Exit;
-    vColl := vUsable[Random(vUsable.Count)];
+    vColl := vUsable[Random(Integer(vUsable.Count))];
   finally
     vUsable.Free;
   end;
@@ -846,7 +846,7 @@ begin
   try
     vFtp.Host := vUri.Host;
     if vUri.Port > 0 then
-      vFtp.Port := vUri.Port;
+      vFtp.Port := Word(vUri.Port);
     vFtp.Passive := True;
     if AColl.User <> '' then
     begin
@@ -949,7 +949,6 @@ var
   vClient: THTTPClient;
   vStream: TFileStream;
 begin
-  Result := False;
   vClient := THTTPClient.Create;
   try
     if AItem.User <> '' then
@@ -973,13 +972,12 @@ var
   vFtp: TIdFTP;
   vUri: TURI;
 begin
-  Result := False;
   vUri := TURI.Create(AItem.Location);
   vFtp := TIdFTP.Create(nil);
   try
     vFtp.Host := vUri.Host;
     if vUri.Port > 0 then
-      vFtp.Port := vUri.Port;
+      vFtp.Port := Word(vUri.Port);
     vFtp.Passive := True;
     if AItem.User <> '' then
     begin

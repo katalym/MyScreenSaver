@@ -1,4 +1,4 @@
-unit WMPLib;
+﻿unit WMPLib;
 
 // ************************************************************************ //
 // WARNING                                                                    
@@ -8587,7 +8587,9 @@ const
     Version:      500);
 begin
   ControlData := @CControlData;
-  TControlData2(CControlData).FirstEventOfs := UIntPtr(@@FOnOpenStateChange) - UIntPtr(Self);
+{$WARN UNSAFE_CAST OFF}
+  TControlData2(CControlData).FirstEventOfs := Cardinal(UIntPtr(@@FOnOpenStateChange) - UIntPtr(Pointer(Self)));
+{$WARN UNSAFE_CAST ON}
 end;
 
 procedure TWindowsMediaPlayer.CreateControl;

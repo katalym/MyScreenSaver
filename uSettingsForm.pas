@@ -217,7 +217,7 @@ begin
     FRules.Items.Add(RuleTitle(FRuleNames[i]));
     FDefault.Items.Add(RuleTitle(FRuleNames[i]));
   end;
-  for i := 0 to Min(High(vChecked), FRules.Items.Count - 1) do
+  for i := 0 to Min(Integer(High(vChecked)), Integer(FRules.Items.Count) - 1) do
     FRules.Checked[i] := vChecked[i];
   FDefault.ItemIndex := vDefaultIdx;
 end;
@@ -236,7 +236,7 @@ begin
   FColl.Items.BeginUpdate;
   try
     FColl.Items.Clear;
-    for i := 0 to High(FItems) do
+    for i := 0 to Integer(High(FItems)) do
     begin
       FColl.Items.Add(FItems[i].Location);
       FColl.Checked[i] := FItems[i].Enabled;
@@ -297,9 +297,9 @@ begin
   vIdx := FColl.ItemIndex;
   if vIdx < 0 then
     Exit;
-  for i := 0 to High(FItems) do
+  for i := 0 to Integer(High(FItems)) do
     FItems[i].Enabled := FColl.Checked[i];
-  for i := vIdx to High(FItems) - 1 do
+  for i := vIdx to Integer(High(FItems)) - 1 do
     FItems[i] := FItems[i + 1];
   SetLength(FItems, Length(FItems) - 1);
   RefreshColl;
@@ -310,7 +310,7 @@ var
   i, vIdx: Integer;
 begin
   SetLength(FItems, Settings.Collections.Count);
-  for i := 0 to Settings.Collections.Count - 1 do
+  for i := 0 to Integer(Settings.Collections.Count) - 1 do
     FItems[i] := Settings.Collections[i];
   RefreshColl;
   FLang.ItemIndex := Ord(CurrentLanguage);
@@ -338,7 +338,7 @@ begin
   Settings.Language := TLanguage(FLang.ItemIndex);
   SetLanguage(Settings.Language);
   Settings.Collections.Clear;
-  for i := 0 to High(FItems) do
+  for i := 0 to Integer(High(FItems)) do
   begin
     FItems[i].Enabled := FColl.Checked[i];
     Settings.Collections.Add(FItems[i]);

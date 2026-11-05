@@ -195,7 +195,7 @@ begin
     vIni.WriteString('Rules', 'HomeRadiusKm', FloatToStr(HomeRadiusKm, TFormatSettings.Invariant));
     vIni.WriteBool('Rules', 'AutoLocate', AutoLocate);
 
-    vIni.WriteInteger('Collections', 'Count', Collections.Count);
+    vIni.WriteInteger('Collections', 'Count', Integer(Collections.Count));
     i := 0;
     for vColl in Collections do
     begin

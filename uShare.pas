@@ -73,7 +73,7 @@ var
   vPath: PChar;
 begin
   vSize := SizeOf(TDropFiles) + (Length(AFileName) + 2) * SizeOf(Char);
-  vMem := GlobalAlloc(GMEM_MOVEABLE or GMEM_ZEROINIT, vSize);
+  vMem := GlobalAlloc(GMEM_MOVEABLE or GMEM_ZEROINIT, NativeUInt(vSize));
   if vMem = 0 then
     Exit;
   vPtr := GlobalLock(vMem);
@@ -112,8 +112,10 @@ begin
     vProc := GetProcAddress(vLib, 'MAPISendMail');
     if not Assigned(vProc) then
       raise Exception.Create(L('MAPI не доступен.', 'MAPI is not available.'));
-    vPath := AnsiString(AFileName);
+{$WARN EXPLICIT_STRING_CAST_LOSS OFF}
+    vPath := AnsiString(AFileName);        // MAPI needs ANSI strings
     vName := AnsiString(ExtractFileName(AFileName));
+{$WARN EXPLICIT_STRING_CAST_LOSS ON}
     vSubject := vName;
     FillChar(vFile, SizeOf(vFile), 0);
     vFile.lpszPathName := PAnsiChar(vPath);
