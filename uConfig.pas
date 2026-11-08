@@ -42,6 +42,10 @@ type
     MediaTypes: TMediaTypes;
     Transition: TTransitionEffect;
     TransitionMs: Integer;           // duration of the transition, milliseconds
+    SilentVideo: Boolean;            // play videos without sound (default: yes)
+    SkipLargeVideos: Boolean;        // skip videos with more pixels than the screen has
+    ExcludeRaw: Boolean;             // do not show RAW files (ARW, DNG, ...)
+    ExcludedFolders: TStringList;    // folders (with subfolders) that are not shown
     ActiveRules: TStringList;
     InfoFields: TStringList;          // enabled built-in fields of the information dialog (key I)
     InfoFieldsConfigured: Boolean;    // False: all fields are shown (default)
@@ -131,12 +135,16 @@ begin
   Collections := TList<TMediaCollection>.Create;
   ActiveRules := TStringList.Create;
   InfoFields := TStringList.Create;
+  ExcludedFolders := TStringList.Create;
   CustomTags := TList<TInfoCustomTag>.Create;
   SlideSeconds := 4;
   Mode := smRandom;
   MediaTypes := mtBoth;
   Transition := teFade;
   TransitionMs := 800;
+  SilentVideo := True;
+  SkipLargeVideos := True;
+  ExcludeRaw := True;
   DefaultRule := 'random';
   DayTolerance := 0;
   HomeRadiusKm := 50;
@@ -147,6 +155,7 @@ end;
 
 destructor TAppSettings.Destroy;
 begin
+  FreeAndNil(ExcludedFolders);
   FreeAndNil(CustomTags);
   FreeAndNil(InfoFields);
   FreeAndNil(ActiveRules);
@@ -191,6 +200,14 @@ begin
       if vName = TransitionNames[vEffect] then
         Transition := vEffect;
     TransitionMs := Max(100, Min(3000, vIni.ReadInteger('General', 'TransitionMs', 800)));
+    SilentVideo := vIni.ReadBool('General', 'SilentVideo', True);
+    SkipLargeVideos := vIni.ReadBool('General', 'SkipLargeVideos', True);
+    ExcludeRaw := vIni.ReadBool('General', 'ExcludeRaw', True);
+    ExcludedFolders.Clear;
+    vCount := vIni.ReadInteger('Exclude', 'Count', 0);
+    for i := 1 to vCount do
+      if vIni.ReadString('Exclude', 'Folder' + IntToStr(i), '') <> '' then
+        ExcludedFolders.Add(vIni.ReadString('Exclude', 'Folder' + IntToStr(i), ''));
     if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'photos') then
       MediaTypes := mtPhotos
     else if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'videos') then
@@ -268,6 +285,12 @@ begin
     vIni.WriteString('General', 'DefaultRule', DefaultRule);
     vIni.WriteString('General', 'Transition', TransitionNames[Transition]);
     vIni.WriteInteger('General', 'TransitionMs', TransitionMs);
+    vIni.WriteBool('General', 'SilentVideo', SilentVideo);
+    vIni.WriteBool('General', 'SkipLargeVideos', SkipLargeVideos);
+    vIni.WriteBool('General', 'ExcludeRaw', ExcludeRaw);
+    vIni.WriteInteger('Exclude', 'Count', Integer(ExcludedFolders.Count));
+    for i := 0 to Integer(ExcludedFolders.Count) - 1 do
+      vIni.WriteString('Exclude', 'Folder' + IntToStr(i + 1), ExcludedFolders[i]);
     case MediaTypes of
       mtPhotos: vIni.WriteString('General', 'MediaTypes', 'photos');
       mtVideos: vIni.WriteString('General', 'MediaTypes', 'videos');

@@ -11,6 +11,7 @@ uses
   System.SysUtils,
   Vcl.Forms,
   uExif in 'uExif.pas',
+  uVersion in 'uVersion.pas',
   uLang in 'uLang.pas',
   uConfig in 'uConfig.pas',
   uLocation in 'uLocation.pas',
@@ -19,11 +20,14 @@ uses
   uShare in 'uShare.pas',
   uInfoFields in 'uInfoFields.pas',
   uInfoFieldsForm in 'uInfoFieldsForm.pas',
+  uFiltersForm in 'uFiltersForm.pas',
   uSettingsForm in 'uSettingsForm.pas',
   uSlideView in 'uSlideView.pas',
   uViewer in 'uViewer.pas',
   uPreview in 'uPreview.pas',
   WMPLib in 'WMPLib.pas';
+
+{$R 'MyScreenSaverVersion.res'}   // version resource, built from MyScreenSaverVersion.rc
 
 var
   vArg: string;

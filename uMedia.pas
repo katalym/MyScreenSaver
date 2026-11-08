@@ -109,6 +109,10 @@ type
 function MediaKindOfFile(const AName: string; out AKind: TMediaKind): Boolean;
 { True if the kind is wanted by the setting "photos / videos / both". }
 function KindAllowed(AKind: TMediaKind): Boolean;
+{ True if the path is inside one of the excluded folders (settings). }
+function IsExcludedPath(const APath: string): Boolean;
+{ Kind, excluded folders and RAW files together: may the item be shown? }
+function ItemAllowed(const AItem: TMediaItem): Boolean;
 { Returns a local file path for the item; downloads remote files into the cache. }
 function EnsureLocalFile(const AItem: TMediaItem): string;
 function GetMediaMeta(const AItem: TMediaItem): TMediaMeta;
@@ -129,11 +133,24 @@ const
     ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tif', '.tiff', '.heic', '.webp', '.jfif');
   VideoExts: array[0..7] of string =
     ('.mp4', '.avi', '.wmv', '.mov', '.mkv', '.mpg', '.mpeg', '.m4v');
+  RawExts: array[0..24] of string =
+    ('.arw', '.dng', '.cr2', '.cr3', '.crw', '.nef', '.nrw', '.orf', '.raf', '.rw2', '.rwl', '.pef', '.srw',
+     '.srf', '.sr2', '.raw', '.3fr', '.erf', '.kdc', '.dcr', '.mrw', '.x3f', '.mef', '.mos', '.iiq');
   MaxDepth = 6;
 
 var
   GMetaLock: TCriticalSection;
   GMetaCache: TDictionary<string, TMediaMeta>;
+
+function IsRawExt(const AExt: string): Boolean;
+var
+  s: string;
+begin
+  for s in RawExts do
+    if s = AExt then
+      Exit(True);
+  Result := False;
+end;
 
 function MediaKindOfFile(const AName: string; out AKind: TMediaKind): Boolean;
 var
@@ -144,6 +161,14 @@ begin
   if Pos('?', vName) > 0 then
     vName := Copy(vName, 1, Pos('?', vName) - 1);
   vExt := LowerCase(ExtractFileExt(vName));
+  if IsRawExt(vExt) then
+  begin
+    // RAW files are photos only if they are not excluded (they need a codec of Windows to be shown)
+    Result := not Settings.ExcludeRaw;
+    if Result then
+      AKind := mkPhoto;
+    Exit;
+  end;
   Result := True;
   for s in PhotoExts do
     if s = vExt then
@@ -168,6 +193,35 @@ begin
   else
     Result := True;
   end;
+end;
+
+function IsExcludedPath(const APath: string): Boolean;
+var
+  i: Integer;
+  vPath, vFolder: string;
+begin
+  Result := False;
+  if Settings.ExcludedFolders.Count = 0 then
+    Exit;
+  vPath := APath.TrimRight(['\', '/']);
+  i := 0;
+  while i < Settings.ExcludedFolders.Count do
+  begin
+    vFolder := Trim(Settings.ExcludedFolders[i]).TrimRight(['\', '/']);
+    Inc(i);
+    if vFolder = '' then
+      Continue;
+    if SameText(vPath, vFolder) or vPath.StartsWith(vFolder + '\', True) or
+      vPath.StartsWith(vFolder + '/', True) then
+      Exit(True);
+  end;
+end;
+
+function ItemAllowed(const AItem: TMediaItem): Boolean;
+begin
+  Result := KindAllowed(AItem.Kind) and not IsExcludedPath(AItem.Location);
+  if Result and Settings.ExcludeRaw and IsRawExt(LowerCase(ExtractFileExt(AItem.Location))) then
+    Result := False;
 end;
 
 { TMediaItem }
@@ -478,6 +532,12 @@ begin
                 Break;
               end;
             Inc(vFileLines);
+            if IsExcludedPath(vParts[1]) or
+              (Settings.ExcludeRaw and IsRawExt(LowerCase(ExtractFileExt(vParts[1])))) then
+            begin
+              Inc(vSkipped);   // a newly excluded folder / RAW files: the file is rewritten without them
+              Continue;
+            end;
             if vCollIdx < 0 then
             begin
               Inc(vSkipped);
@@ -569,7 +629,10 @@ begin
           if (vSr.Name = '.') or (vSr.Name = '..') then
             Continue;
           if (vSr.Attr and faDirectory) <> 0 then
-            vDirs.Add(vSr.Name)
+            begin
+              if not IsExcludedPath(vPath + vSr.Name) then
+                vDirs.Add(vSr.Name);
+            end
           else if MediaKindOfFile(vSr.Name, vKind) and Wanted(vKind) then
             vFiles.Add(vSr.Name);
         until FindNext(vSr) <> 0;
@@ -738,6 +801,8 @@ var
   vSr: TSearchRec;
   vDir: string;
 begin
+  if IsExcludedPath(ADir) then
+    Exit;
   vDir := IncludeTrailingPathDelimiter(ADir);
   if FindFirst(vDir + '*', faAnyFile, vSr) = 0 then
   try
@@ -799,7 +864,8 @@ begin
     if vFull.EndsWith('/') then
     begin
       if vFull.Length > AUrl.Length then
-        ADirs.Add(vFull);
+        if not IsExcludedPath(vFull) then
+          ADirs.Add(vFull);
     end
     else if MediaKindOfFile(vFull, vKind) then
       AFiles.Add(vFull);
@@ -866,7 +932,8 @@ var
         if MediaKindOfFile(vNames[i], vKind) then
           AddFile(AColl, 'ftp://' + vUri.Host + vBasePath + TNetEncoding.URL.Encode(vNames[i]));
       for i := 0 to vDirs.Count - 1 do
-        Walk(vBasePath + vDirs[i], ADepth + 1);
+        if not IsExcludedPath('ftp://' + vUri.Host + vBasePath + vDirs[i]) then
+          Walk(vBasePath + vDirs[i], ADepth + 1);
     finally
       vNames.Free;
       vDirs.Free;

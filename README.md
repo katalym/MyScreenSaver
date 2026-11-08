@@ -8,6 +8,8 @@
 
 Скринсейвер Windows и просмотрщик фото/видео (Delphi 13, VCL, 64 бита, без баз данных).
 Интерфейс на русском и английском языках.
+Версия **1.1.1.1** (задаётся в `MyScreenSaverVersion.rc`, видна в окне настроек, в заголовке окна и в
+свойствах файла).
 Требования: `C:\Claude\Screensaver\Требования_к_приложению.md`.
 
 ### Сборка
@@ -41,6 +43,13 @@ build.bat
 (полностью случайный / по правилам), переход между слайдами и его длительность в миллисекундах, что показывать (флажки «Показывать фото» и «Показывать видео»; если
 отмечены оба, показываются оба типа; хотя бы один флажок всегда отмечен), правила, **язык интерфейса: Русский (Russian) или English (Английский)**.
 По умолчанию язык берётся из языка Windows.
+
+Кнопка **«Фильтры...»**: воспроизводить видео без звука (по умолчанию включено: звук выключен); пропускать видео, у которых
+больше пикселей, чем у экрана (по умолчанию включено; проверяется при начале воспроизведения, ролик
+останавливается и выбирается следующий); исключить RAW-файлы (ARW, DNG, CR2, CR3, NEF, ORF, RAF, RW2 и др.;
+по умолчанию включено — RAW показываются только если флажок снят и в Windows есть кодек); список исключённых
+папок (файлы в них и в подпапках не показываются; локальные, сетевые и HTTP/FTP-адреса). В INI: `SilentVideo`,
+`SkipLargeVideos`, `ExcludeRaw` в `[General]` и раздел `[Exclude]` (`Count=`, `FolderN=`).
 
 Кнопка **«Поля окна информации (I)...»**: какие поля показывает окно информации (клавиша **I**) — все
 встроенные поля (файл, размер, камера, теги XP / IPTC / XMP, дата съёмки, GPS, место и т. д.) можно
@@ -96,6 +105,8 @@ build.bat
 
 Windows screensaver and photo/video viewer (Delphi 13, VCL, 64-bit, no database).
 The user interface is available in Russian and English.
+Version **1.1.1.1** (set in `MyScreenSaverVersion.rc`, shown in the settings dialog, the window title and the
+file properties).
 Requirements: `C:\Claude\Screensaver\Требования_к_приложению.md` (Russian).
 
 ### Build
@@ -129,6 +140,13 @@ Settings dialog (`/c` or key **C**): collections (local, UNC, HTTP listing, FTP)
 (fully random / by rules), slide transition and its duration in milliseconds, what to show (check boxes "Show photos" and "Show videos"; if both are checked,
 both types are shown; at least one box always stays checked), rules, **interface language: Русский (Russian) or English (Английский)**.
 By default the language follows the Windows language.
+
+The **"Filters..."** button: play videos silently (on by default: the sound is off); skip videos that have more pixels than the
+screen (on by default; it is checked when a video starts to play, the video is stopped and the next one is
+chosen); exclude RAW files (ARW, DNG, CR2, CR3, NEF, ORF, RAF, RW2, etc.; on by default — RAW files are shown
+only if the box is unchecked and Windows has a codec for them); a list of excluded folders (files in them and in
+their subfolders are not shown; local, network and HTTP/FTP addresses). In the INI: `SilentVideo`,
+`SkipLargeVideos`, `ExcludeRaw` in `[General]` and the section `[Exclude]` (`Count=`, `FolderN=`).
 
 The **"Information dialog fields (I)..."** button: which fields the information dialog (key **I**) shows —
 all built-in fields (file, size, camera, XP / IPTC / XMP tags, date taken, GPS, place, etc.) can be

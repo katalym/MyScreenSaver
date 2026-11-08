@@ -4,6 +4,10 @@ setlocal
 call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat"
 pushd "%~dp0"
 set OUT=%TEMP%\MyScreenSaver_win64
+rem the version resource: MyScreenSaverVersion.rc -> MyScreenSaverVersion.res (the .res is committed too,
+rem so the Delphi IDE can build without a resource compiler)
+brcc32 -fo MyScreenSaverVersion.res MyScreenSaverVersion.rc
+if errorlevel 1 (popd & exit /b 1)
 if not exist "%OUT%" mkdir "%OUT%"
 dcc64 -B -Q -W -H -CG -E"%OUT%" -N0"%OUT%" -U"%BDS%\lib\win64\release" -NSSystem;Winapi;Vcl;Vcl.Imaging;Data;System.Win MyScreenSaver.dpr
 set ERR=%ERRORLEVEL%

@@ -187,7 +187,7 @@ var
   function Accept: Boolean;
   begin
     Result := False;
-    if not KindAllowed(vItem.Kind) then
+    if not ItemAllowed(vItem) then
       Exit;
     if ARule.NeedsMeta then
     begin

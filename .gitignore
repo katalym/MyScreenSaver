@@ -3,7 +3,9 @@
 *.dcu
 *.dcr
 *.res
+!MyScreenSaverVersion.res
 *.local
 *.dsk
 *.~dsk
 __history/
+*.rsm

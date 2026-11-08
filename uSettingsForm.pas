@@ -11,7 +11,7 @@ implementation
 
 uses
   Winapi.Windows, System.SysUtils, System.Classes, System.Math, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls,
-  Vcl.CheckLst, Vcl.Dialogs, uConfig, uRules, uLang, uInfoFieldsForm;
+  Vcl.CheckLst, Vcl.Dialogs, uConfig, uRules, uLang, uInfoFieldsForm, uFiltersForm, uVersion;
 
 type
   TSettingsForm = class(TForm)
@@ -24,6 +24,7 @@ type
     FAddUrl: TButton;
     FRemove: TButton;
     FInfoFields: TButton;
+    FFilters: TButton;
     FSecondsLabel: TLabel;
     FSeconds: TEdit;
     FTransLabel: TLabel;
@@ -59,6 +60,7 @@ type
     procedure ApplyTexts;
     procedure LangChange(Sender: TObject);
     procedure InfoFieldsClick(Sender: TObject);
+    procedure FiltersClick(Sender: TObject);
     procedure MediaClick(Sender: TObject);
     procedure AddFolderClick(Sender: TObject);
     procedure AddUrlClick(Sender: TObject);
@@ -120,6 +122,7 @@ begin
   FSecondsLabel := AddLabel(12, 228);
   FSeconds := AddEdit(240, 225, 60);
 
+  FFilters := AddButton(498, 253, 130, FiltersClick);
   FModeLabel := AddLabel(12, 258);
   FMode := TComboBox.Create(Self);
   FMode.Parent := Self;
@@ -212,7 +215,8 @@ var
   i, vModeIdx, vDefaultIdx, vTransIdx: Integer;
   vChecked: array of Boolean;
 begin
-  Caption := L('MyScreenSaver — настройки', 'MyScreenSaver — settings');
+  Caption := Trim('MyScreenSaver ' + AppVersion) + L(' — настройки', ' — settings');
+  FFilters.Caption := L('Фильтры...', 'Filters...');
   FLangLabel.Caption := 'Язык / Language:';
   FCollLabel.Caption := L('Медиаколлекции (отмеченные используются):', 'Media collections (checked are used):');
   FAddFolder.Caption := L('Добавить папку...', 'Add folder...');
@@ -272,6 +276,11 @@ procedure TSettingsForm.MediaClick(Sender: TObject);
 begin
   if not FShowPhotos.Checked and not FShowVideos.Checked then
     (Sender as TCheckBox).Checked := True;
+end;
+
+procedure TSettingsForm.FiltersClick(Sender: TObject);
+begin
+  ShowFiltersDialog;
 end;
 
 procedure TSettingsForm.InfoFieldsClick(Sender: TObject);

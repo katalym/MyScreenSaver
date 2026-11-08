@@ -25,6 +25,8 @@ type
     FUserNav: Boolean;           // the move was made by the user (arrow keys): short transition
     FGoingBack: Boolean;         // the user goes to the previous slide
     FPendingVideo: string;       // a video waits until the photo has faded to black
+    FWaitingOpen: Boolean;       // a video is opened and its size is checked before it plays
+    FSkips: Integer;             // videos skipped in a row because they are too large
     FVideoHost: TPanel;
     FPlayer: TWindowsMediaPlayer;
     FStatus: TLabel;
@@ -47,6 +49,7 @@ type
     function HandleKey(AKey: Word; ARepeat: Boolean): Boolean;
     procedure TimerTick(Sender: TObject);
     procedure PlayerStateChange(ASender: TObject; ANewState: Integer);
+    procedure CheckVideoSize;
     procedure FitVideo;
     procedure PlayerError(Sender: TObject);
     procedure GoNext;
@@ -70,6 +73,7 @@ type
     procedure OpenSettings;
     procedure CreateBlankForms;
   protected
+    procedure CreateParams(var Params: TCreateParams); override;
     procedure DoShow; override;
     procedure Resize; override;
   public
@@ -87,7 +91,7 @@ implementation
 
 uses
   System.IOUtils, System.DateUtils, System.StrUtils, System.Math, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
-  Winapi.Wincodec, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
+  Winapi.Wincodec, uVersion, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
 
 const
   HistoryLimit = 100000;
@@ -146,7 +150,7 @@ begin
   FBlankForms := TList<TForm>.Create;
   Color := clBlack;
   KeyPreview := True;
-  Caption := 'MyScreenSaver';
+  Caption := Trim('MyScreenSaver ' + AppVersion);
 
   if FMode = vmScreenSaver then
   begin
@@ -238,6 +242,19 @@ begin
   FreeAndNil(FBlankForms);
   FreeAndNil(FHistory);
   inherited;
+end;
+
+{ The standalone viewer must have its own button in the taskbar. The window handle is created while the
+  form is being built, before it is the main form of the application, so VCL makes the window an owned
+  one without a button: it is made a normal top-level window here. (The screensaver has no button.) }
+procedure TViewerForm.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  if FMode = vmStandalone then
+  begin
+    Params.WndParent := 0;
+    Params.ExStyle := Params.ExStyle or WS_EX_APPWINDOW;
+  end;
 end;
 
 procedure TViewerForm.DoShow;
@@ -483,6 +500,7 @@ var
   vPath: string;
 begin
   FPendingVideo := '';
+  FWaitingOpen := False;
   vItem := FHistory[FHistPos];
   FCurrentItem := vItem;
   FHasCurrent := True;
@@ -530,6 +548,7 @@ begin
   vOrient := 0;
   if MatchText(LowerCase(ExtractFileExt(APath)), ['.jpg', '.jpeg', '.jfif']) then
     vOrient := ReadExif(APath).Orientation;
+  FSkips := 0;
   vMs := TransitionLength;
   vEffect := Settings.Transition;
   if vEffect = teRandom then
@@ -586,6 +605,12 @@ procedure TViewerForm.StartVideo(const APath: string);
 begin
   FView.Clear;
   FVideoHost.Visible := True;
+  // With the size check the video starts hidden and muted; its size is known only when it plays
+  // (see CheckVideoSize): a too large video is stopped and skipped, the others become visible.
+  FWaitingOpen := Settings.SkipLargeVideos;
+  FPlayer.Visible := not FWaitingOpen;
+  FPlayer.settings.mute := FWaitingOpen or Settings.SilentVideo;
+  FPlayer.settings.autoStart := True;
   FPlayer.URL := APath;
   FPlayer.controls.play;
   // the next file is chosen when playback ends; the timer is a safety net
@@ -623,11 +648,48 @@ begin
   FitVideo;
 end;
 
+{ The video plays (its size is known now): a video with more pixels than the screen is stopped and
+  skipped, the others become visible and get their sound. }
+procedure TViewerForm.CheckVideoSize;
+var
+  vW, vH: Integer;
+begin
+  if not FWaitingOpen then
+    Exit;
+  FWaitingOpen := False;
+  if FPlayer.currentMedia <> nil then
+  begin
+    vW := FPlayer.currentMedia.imageSourceWidth;
+    vH := FPlayer.currentMedia.imageSourceHeight;
+    if (vW > 0) and (vH > 0) and (Int64(vW) * vH > Int64(Monitor.Width) * Monitor.Height) then
+    begin
+      FPlayer.controls.stop;
+      Inc(FSkips);
+      if (FHistPos >= 0) and (FHistPos < FHistory.Count) then
+      begin
+        FHistory.Delete(FHistPos);
+        Dec(FHistPos);
+      end;
+      FTimer.Enabled := False;
+      FTimer.Interval := Cardinal(IfThen(FSkips > MaxFailures, 3000, 20));
+      FTimer.Enabled := True;
+      Exit;
+    end;
+  end;
+  FSkips := 0;
+  FPlayer.settings.mute := Settings.SilentVideo;
+  FPlayer.Visible := True;
+  FitVideo;
+end;
+
 procedure TViewerForm.PlayerStateChange(ASender: TObject; ANewState: Integer);
 begin
   // 3 = wmppsPlaying: the size of the video is known
   if ANewState = 3 then
+  begin
+    CheckVideoSize;
     FitVideo;
+  end;
   // 8 = wmppsMediaEnded
   if (ANewState = 8) and not FPaused and not FInfoShown then
   begin
