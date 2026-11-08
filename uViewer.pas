@@ -30,7 +30,8 @@ type
     FSkips: Integer;             // videos skipped in a row because they are too large
     FVideoHost: TPanel;
     FPlayer: TWindowsMediaPlayer;
-    FStatus: TLabel;
+    FStatus: TLabel;         // centered message (no collections / no files / loading)
+    FPauseBar: TPanel;       // "Paused" badge at the bottom, above the video window too
     FInfoPanel: TPanel;      // gray frame
     FInfoInner: TPanel;      // dark background of the text
     FShareBtn: TButton;      // opens the share dialog
@@ -71,6 +72,9 @@ type
     function TransitionLength: Integer;
     procedure ShowMessage(const AText: string);
     procedure ArmTimer;
+    procedure CenterStatus;
+    procedure SetPauseBar(AVisible: Boolean);
+    function HasEnabledCollection: Boolean;
     procedure TogglePause;
     procedure ToggleInfo;
     procedure HideInfo;
@@ -213,13 +217,21 @@ begin
 
   FStatus := TLabel.Create(Self);
   FStatus.Parent := Self;
-  FStatus.Font.Size := 20;
+  FStatus.Font.Size := 24;
   FStatus.Font.Color := clSilver;
   FStatus.Transparent := True;
   FStatus.AutoSize := True;
-  FStatus.Left := 24;
-  FStatus.Top := 24;
   FStatus.Visible := False;
+
+  FPauseBar := TPanel.Create(Self);
+  FPauseBar.Parent := Self;
+  FPauseBar.BevelOuter := bvNone;
+  FPauseBar.ParentBackground := False;
+  FPauseBar.Color := $303030;
+  FPauseBar.Font.Size := 16;
+  FPauseBar.Font.Color := clWhite;
+  FPauseBar.Height := 48;
+  FPauseBar.Visible := False;
 
   FInfoPanel := TPanel.Create(Self);
   FInfoPanel.Parent := Self;
@@ -465,6 +477,7 @@ var
 begin
   HideInfo;
   FPaused := False;
+  SetPauseBar(False);
   FStatus.Visible := False;
   if FHistPos < FHistory.Count - 1 then
   begin
@@ -476,10 +489,10 @@ begin
   begin
     if FCatalog.Scanning then
       ShowMessage(L('Загрузка списка файлов...', 'Loading the file list...'))
-    else if Settings.Collections.Count = 0 then
-      ShowMessage(L('Нет медиаколлекций. Настройте приложение (клавиша C).', 'No media collections. Configure the application (key C).'))
+    else if not HasEnabledCollection then
+      ShowMessage(L('Медиаколлекции не определены', 'No media collections are defined'))
     else
-      ShowMessage(L('Медиафайлы не найдены.', 'No media files found.'));
+      ShowMessage(L('Нет доступных медиафайлов', 'No media files available'));
     FTimer.Interval := Cardinal(IfThen(FCatalog.Scanning, 200, 1500));
     FTimer.Enabled := True;
     Exit;
@@ -497,6 +510,7 @@ begin
     Exit;
   HideInfo;
   FPaused := False;
+  SetPauseBar(False);
   FStatus.Visible := False;
   Dec(FHistPos);
   ShowCurrent;
@@ -511,8 +525,40 @@ begin
   FPendingVideo := '';
   FView.Clear;
   FStatus.Caption := AText;
+  CenterStatus;
   FStatus.Visible := True;
   FStatus.BringToFront;
+end;
+
+procedure TViewerForm.CenterStatus;
+begin
+  FStatus.Left := (ClientWidth - FStatus.Width) div 2;
+  FStatus.Top := (ClientHeight - FStatus.Height) div 2;
+end;
+
+procedure TViewerForm.SetPauseBar(AVisible: Boolean);
+begin
+  if AVisible then
+  begin
+    FPauseBar.Caption := L('Пауза', 'Paused');
+    FPauseBar.Width := 220;
+    FPauseBar.Left := (ClientWidth - FPauseBar.Width) div 2;
+    FPauseBar.Top := ClientHeight - FPauseBar.Height - 40;
+    FPauseBar.Visible := True;
+    FPauseBar.BringToFront;
+  end
+  else
+    FPauseBar.Visible := False;
+end;
+
+function TViewerForm.HasEnabledCollection: Boolean;
+var
+  vColl: TMediaCollection;
+begin
+  Result := False;
+  for vColl in Settings.Collections do
+    if vColl.Enabled then
+      Exit(True);
 end;
 
 procedure TViewerForm.ShowCurrent;
@@ -670,6 +716,10 @@ procedure TViewerForm.Resize;
 begin
   inherited;
   FitVideo;
+  if FStatus <> nil then
+    CenterStatus;
+  if (FPauseBar <> nil) and FPauseBar.Visible then
+    SetPauseBar(True);
   if FOverlay <> nil then
     FOverlay.Refit;
 end;
@@ -753,13 +803,11 @@ begin
     FTimer.Enabled := False;
     if FCurrentItem.Kind = mkVideo then
       FPlayer.controls.pause;
-    FStatus.Caption := L('Пауза', 'Paused');
-    FStatus.Visible := True;
-    FStatus.BringToFront;
+    SetPauseBar(True);
   end
   else
   begin
-    FStatus.Visible := False;
+    SetPauseBar(False);
     if FCurrentItem.Kind = mkVideo then
     begin
       FPlayer.controls.play;
@@ -787,6 +835,7 @@ begin
   if FCurrentItem.Kind = mkVideo then
     FPlayer.controls.pause;
   FStatus.Visible := False;
+  SetPauseBar(False);
   ShowInfoPanel(BuildInfo);
 end;
 
