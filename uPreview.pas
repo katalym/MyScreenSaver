@@ -6,15 +6,7 @@
 interface
 
 uses
-  Winapi.Windows;
-
-procedure RunPreview(AParentWnd: HWND);
-
-implementation
-
-uses
-  System.SysUtils, System.Classes, System.Math, Vcl.Controls, Vcl.Forms, Vcl.ExtCtrls, Vcl.Graphics,
-  uConfig, uMedia, uViewer;
+  Winapi.Windows, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.ExtCtrls, Vcl.Graphics, uMedia;
 
 type
   TPreviewForm = class(TForm)
@@ -35,6 +27,16 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
   end;
+
+procedure RunPreview(AParentWnd: HWND);
+
+implementation
+
+{$R *.DFM}
+
+uses
+  System.SysUtils, System.Math, uConfig, uViewer;
+
 
 var
   GParentWnd: HWND;

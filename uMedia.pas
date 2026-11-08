@@ -48,6 +48,7 @@ type
     function PopQuick(out AItem: TMediaItem): Boolean;
     function QuickCount: Integer;
     function Contains(const ALocation: string): Boolean;
+    procedure Remove(const ALocation: string);
     procedure AddRange(AItems: TList<TMediaItem>);
     function Snapshot: TArray<TMediaItem>;
     { Drops items that were not seen by the last scan (only for collections that were reachable).
@@ -298,6 +299,24 @@ begin
     begin
       FIndex.Add(AItem.Location, Integer(FItems.Count));
       FItems.Add(AItem);
+    end;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TMediaCatalog.Remove(const ALocation: string);
+var
+  vIdx, i: Integer;
+begin
+  FLock.Enter;
+  try
+    if FIndex.TryGetValue(ALocation, vIdx) then
+    begin
+      FItems.Delete(vIdx);
+      FIndex.Remove(ALocation);
+      for i := vIdx to Integer(FItems.Count) - 1 do   // the items after it have moved
+        FIndex[FItems[i].Location] := i;
     end;
   finally
     FLock.Leave;

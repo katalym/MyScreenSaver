@@ -3,7 +3,7 @@
 { Windows screensaver (.scr) and standalone media viewer.
   Command line:  /s  - run as screensaver
                  /c  - settings dialog
-                 /p  - preview (not supported, exits)
+                 /p <hwnd> - preview in the small window of the settings dialog (one random photo)
                  (none) - standalone viewer }
 
 uses
@@ -18,6 +18,8 @@ uses
   uMedia in 'uMedia.pas',
   uRules in 'uRules.pas',
   uShare in 'uShare.pas',
+  uShareDialog in 'uShareDialog.pas' {ShareForm},
+  uShareIcons in 'uShareIcons.pas',
   uInfoFields in 'uInfoFields.pas',
   uSettingsForm in 'uSettingsForm.pas' {SettingsForm},
   uOverlay in 'uOverlay.pas' {OverlayWindow},

@@ -6,15 +6,9 @@
 
 interface
 
-{ Returns True if the settings were changed and saved. }
-function ShowSettingsDialog: Boolean;
-
-implementation
-
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.Types, System.Math, System.Generics.Collections,
-  Vcl.Controls, Vcl.Forms, Vcl.Graphics, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.CheckLst, Vcl.Dialogs,
-  uConfig, uRules, uLang, uInfoFields, uVersion;
+  System.Classes, System.Generics.Collections, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls,
+  Vcl.ComCtrls, Vcl.CheckLst, uConfig, uLang;
 
 type
   TSettingsForm = class(TForm)
@@ -73,6 +67,10 @@ type
     FAuto: TCheckBox;
     // information dialog fields
     FInfoHint: TLabel;
+    FInfoFontLabel: TLabel;
+    FInfoFont: TComboBox;
+    FInfoSizeLabel: TLabel;
+    FInfoSize: TEdit;
     FFields: TCheckListBox;
     FFieldAdd: TButton;
     FFieldRemove: TButton;
@@ -105,6 +103,7 @@ type
     procedure BuildTypesTab;
     procedure BuildPlayTab;
     procedure BuildInfoTab;
+    procedure FillFonts(ACombo: TComboBox);
     procedure BuildOverlayTab;
     procedure ApplyTexts;
     procedure LangChange(Sender: TObject);
@@ -135,6 +134,18 @@ type
     property OriginalLanguage: TLanguage read FOriginalLanguage;
   end;
 
+{ Returns True if the settings were changed and saved. }
+function ShowSettingsDialog: Boolean;
+
+implementation
+
+{$R *.DFM}
+
+uses
+  Winapi.Windows, System.SysUtils, System.Types, System.Math, Vcl.Graphics, Vcl.Dialogs,
+  uRules, uInfoFields, uVersion;
+
+
 function F2S(AValue: Double): string;
 begin
   Result := FloatToStr(AValue, TFormatSettings.Invariant);
@@ -164,7 +175,7 @@ begin
   BorderStyle := bsDialog;
   Position := poScreenCenter;
   ClientWidth := 660;
-  ClientHeight := 612;
+  ClientHeight := 512;
   Font.Name := 'Segoe UI';
   Font.Size := 9;
   FRuleNames := TStringList.Create;
@@ -180,7 +191,7 @@ begin
 
   FPages := TPageControl.Create(Self);
   FPages.Parent := Self;
-  FPages.SetBounds(8, 42, 644, 520);
+  FPages.SetBounds(8, 42, 644, 420);
   FTabColl := TTabSheet.Create(Self);
   FTabColl.PageControl := FPages;
   FTabTypes := TTabSheet.Create(Self);
@@ -197,9 +208,9 @@ begin
   BuildInfoTab;
   BuildOverlayTab;
 
-  FOk := NewButton(Self, 460, 574, 90, OkClick);
+  FOk := NewButton(Self, 460, 474, 90, OkClick);
   FOk.Default := True;
-  FCancel := NewButton(Self, 558, 574, 90, nil);
+  FCancel := NewButton(Self, 558, 474, 90, nil);
   FCancel.ModalResult := mrCancel;
   FCancel.Cancel := True;
   LoadValues;
@@ -242,7 +253,7 @@ function TSettingsForm.NewButton(AParent: TWinControl; ALeft, ATop, AWidth: Inte
 begin
   Result := TButton.Create(Self);
   Result.Parent := AParent;
-  Result.SetBounds(ALeft, ATop, AWidth, 27);
+  Result.SetBounds(ALeft, ATop, AWidth, 25);   // the default height of a button
   Result.OnClick := AClick;
 end;
 
@@ -267,18 +278,18 @@ begin
   FCollLabel := NewLabel(FTabColl, 12, 10);
   FColl := TCheckListBox.Create(Self);
   FColl.Parent := FTabColl;
-  FColl.SetBounds(12, 30, 612, 150);
-  FCollAddFolder := NewButton(FTabColl, 12, 186, 150, AddCollFolderClick);
-  FCollAddUrl := NewButton(FTabColl, 170, 186, 240, AddCollUrlClick);
-  FCollRemove := NewButton(FTabColl, 418, 186, 100, RemoveCollClick);
+  FColl.SetBounds(12, 30, 612, 120);
+  FCollAddFolder := NewButton(FTabColl, 12, 156, 150, AddCollFolderClick);
+  FCollAddUrl := NewButton(FTabColl, 170, 156, 240, AddCollUrlClick);
+  FCollRemove := NewButton(FTabColl, 418, 156, 100, RemoveCollClick);
 
-  FExclLabel := NewLabel(FTabColl, 12, 236);
+  FExclLabel := NewLabel(FTabColl, 12, 196);
   FExcl := TListBox.Create(Self);
   FExcl.Parent := FTabColl;
-  FExcl.SetBounds(12, 256, 612, 150);
-  FExclAddFolder := NewButton(FTabColl, 12, 412, 150, AddExclFolderClick);
-  FExclAddUrl := NewButton(FTabColl, 170, 412, 260, AddExclUrlClick);
-  FExclRemove := NewButton(FTabColl, 438, 412, 100, RemoveExclClick);
+  FExcl.SetBounds(12, 216, 612, 120);
+  FExclAddFolder := NewButton(FTabColl, 12, 342, 150, AddExclFolderClick);
+  FExclAddUrl := NewButton(FTabColl, 170, 342, 260, AddExclUrlClick);
+  FExclRemove := NewButton(FTabColl, 438, 342, 100, RemoveExclClick);
 end;
 
 procedure TSettingsForm.BuildTypesTab;
@@ -334,54 +345,73 @@ begin
   FAuto.WordWrap := True;
 end;
 
-procedure TSettingsForm.BuildInfoTab;
-begin
-  FInfoHint := NewLabel(FTabInfo, 12, 10);
-  FFields := TCheckListBox.Create(Self);
-  FFields.Parent := FTabInfo;
-  FFields.SetBounds(12, 32, 612, 340);
-  FFields.ShowHint := True;
-  FFields.OnMouseMove := FieldsMouseMove;
-  FFieldAdd := NewButton(FTabInfo, 12, 380, 200, AddFieldClick);
-  FFieldRemove := NewButton(FTabInfo, 220, 380, 170, RemoveFieldClick);
-  FFieldExamples := NewLabel(FTabInfo, 12, 418);
-  FFieldExamples.AutoSize := False;
-  FFieldExamples.WordWrap := True;
-  FFieldExamples.SetBounds(12, 418, 612, 48);
-end;
-
-procedure TSettingsForm.BuildOverlayTab;
+procedure TSettingsForm.FillFonts(ACombo: TComboBox);
 var
   vFonts: TStringList;
 begin
-  FOverlayHint := NewLabel(FTabOverlay, 12, 10);
-  FOverlayFields := TCheckListBox.Create(Self);
-  FOverlayFields.Parent := FTabOverlay;
-  FOverlayFields.SetBounds(12, 32, 612, 250);
-  FOverlayFields.ShowHint := True;
-  FOverlayFields.OnMouseMove := FieldsMouseMove;
-
-  FOverlayPosLabel := NewLabel(FTabOverlay, 12, 300);
-  FOverlayPos := NewCombo(FTabOverlay, 100, 297, 220);
-  FOverlayFontLabel := NewLabel(FTabOverlay, 12, 334);
-  FOverlayFont := NewCombo(FTabOverlay, 100, 331, 250);
   vFonts := TStringList.Create;
   try
     vFonts.Assign(Screen.Fonts);
     vFonts.Sort;
-    FOverlayFont.Items.Assign(vFonts);
+    ACombo.Items.Assign(vFonts);
   finally
     vFonts.Free;
   end;
+end;
+
+procedure TSettingsForm.BuildInfoTab;
+var
+  vBottom: Integer;
+begin
+  FInfoHint := NewLabel(FTabInfo, 12, 10);
+  FFields := TCheckListBox.Create(Self);
+  FFields.Parent := FTabInfo;
+  FFields.Columns := 3;   // the fields flow down the columns: 9 rows are enough for the standard ones
+  // the list takes all the room the controls below it leave on the tab
+  vBottom := FTabInfo.ClientHeight - 8 - 134;
+  FFields.SetBounds(12, 32, 612, vBottom - 32);
+  FFields.ShowHint := True;
+  FFields.OnMouseMove := FieldsMouseMove;
+  FFieldAdd := NewButton(FTabInfo, 12, vBottom + 8, 200, AddFieldClick);
+  FFieldRemove := NewButton(FTabInfo, 220, vBottom + 8, 170, RemoveFieldClick);
+  FInfoFontLabel := NewLabel(FTabInfo, 12, vBottom + 48);
+  FInfoFont := NewCombo(FTabInfo, 100, vBottom + 45, 250);
+  FillFonts(FInfoFont);
+  FInfoSizeLabel := NewLabel(FTabInfo, 370, vBottom + 48);
+  FInfoSize := NewEdit(FTabInfo, 450, vBottom + 45, 44);
+  FFieldExamples := NewLabel(FTabInfo, 12, vBottom + 86);
+  FFieldExamples.AutoSize := False;
+  FFieldExamples.WordWrap := True;
+  FFieldExamples.SetBounds(12, vBottom + 86, 612, 48);
+end;
+
+procedure TSettingsForm.BuildOverlayTab;
+var
+  vD: Integer;   // how much higher everything below the list is than it was with the tall list
+begin
+  FOverlayHint := NewLabel(FTabOverlay, 12, 10);
+  FOverlayFields := TCheckListBox.Create(Self);
+  FOverlayFields.Parent := FTabOverlay;
+  FOverlayFields.Columns := 3;
+  FOverlayFields.SetBounds(12, 32, 612, 9 * FOverlayFields.ItemHeight + 8);
+  vD := FOverlayFields.Top + FOverlayFields.Height - 282;
+  FOverlayFields.ShowHint := True;
+  FOverlayFields.OnMouseMove := FieldsMouseMove;
+
+  FOverlayPosLabel := NewLabel(FTabOverlay, 12, 300 + vD);
+  FOverlayPos := NewCombo(FTabOverlay, 100, 297 + vD, 220);
+  FOverlayFontLabel := NewLabel(FTabOverlay, 12, 334 + vD);
+  FOverlayFont := NewCombo(FTabOverlay, 100, 331 + vD, 250);
+  FillFonts(FOverlayFont);
   FOverlayFont.OnChange := OverlayFontChange;
-  FOverlaySizeLabel := NewLabel(FTabOverlay, 370, 334);
-  FOverlaySize := NewEdit(FTabOverlay, 450, 331, 44);
+  FOverlaySizeLabel := NewLabel(FTabOverlay, 370, 334 + vD);
+  FOverlaySize := NewEdit(FTabOverlay, 450, 331 + vD, 44);
   FOverlaySize.OnChange := OverlayFontChange;
-  FOverlayNames := NewCheck(FTabOverlay, 12, 368, 600);
+  FOverlayNames := NewCheck(FTabOverlay, 12, 368 + vD, 600);
 
   FOverlayPanel := TPanel.Create(Self);
   FOverlayPanel.Parent := FTabOverlay;
-  FOverlayPanel.SetBounds(12, 400, 612, 76);
+  FOverlayPanel.SetBounds(12, 400 + vD, 612, 76);
   FOverlayPanel.BevelOuter := bvLowered;
   FOverlayPanel.ParentBackground := False;
   FOverlayPanel.Color := clBlack;
@@ -493,6 +523,8 @@ begin
     'Checked fields are shown over the photos and videos:');
   FOverlayPosLabel.Caption := L('Положение:', 'Position:');
   FOverlayFontLabel.Caption := L('Шрифт:', 'Font:');
+  FInfoFontLabel.Caption := L('Шрифт:', 'Font:');
+  FInfoSizeLabel.Caption := L('Размер, пт:', 'Size, pt:');
   FOverlaySizeLabel.Caption := L('Размер, пт:', 'Size, pt:');
   FOverlayNames.Caption := L('Показывать названия полей («Название: значение»)', 'Show the field names ("Name: value")');
   FOverlaySample.Caption := L('Пример: 2021-12-09 · Торонто', 'Sample: 2021-12-09 · Toronto');
@@ -850,6 +882,12 @@ begin
   FRadius.Text := F2S(Settings.HomeRadiusKm);
   FAuto.Checked := Settings.AutoLocate;
 
+  // information window font
+  FInfoFont.ItemIndex := FInfoFont.Items.IndexOf(Settings.InfoFontName);
+  if FInfoFont.ItemIndex < 0 then
+    FInfoFont.ItemIndex := FInfoFont.Items.IndexOf('Consolas');
+  FInfoSize.Text := IntToStr(Settings.InfoFontSize);
+
   // overlay
   FOverlayPos.ItemIndex := Max(0, Min(8, Settings.OverlayPosition));
   FOverlayFont.ItemIndex := FOverlayFont.Items.IndexOf(Settings.OverlayFontName);
@@ -933,6 +971,11 @@ begin
   Settings.CustomTags.Clear;
   for i := 0 to Integer(FCustom.Count) - 1 do
     Settings.CustomTags.Add(FCustom[i]);
+
+  // font of the information window
+  if FInfoFont.ItemIndex >= 0 then
+    Settings.InfoFontName := FInfoFont.Text;
+  Settings.InfoFontSize := Max(8, Min(48, StrToIntDef(FInfoSize.Text, 11)));
 
   // overlay look
   Settings.OverlayPosition := Max(0, FOverlayPos.ItemIndex);

@@ -127,19 +127,28 @@
         <DCCReference Include="uMedia.pas"/>
         <DCCReference Include="uRules.pas"/>
         <DCCReference Include="uShare.pas"/>
+        <DCCReference Include="uShareDialog.pas">
+            <Form>ShareForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
+        <DCCReference Include="uShareIcons.pas"/>
         <DCCReference Include="uInfoFields.pas"/>
         <DCCReference Include="uSettingsForm.pas">
             <Form>SettingsForm</Form>
+            <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="uOverlay.pas">
             <Form>OverlayWindow</Form>
+            <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="uSlideView.pas"/>
         <DCCReference Include="uViewer.pas">
             <Form>ViewerForm</Form>
+            <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="uPreview.pas">
             <Form>PreviewForm</Form>
+            <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="WMPLib.pas"/>
         <BuildConfiguration Include="Base">

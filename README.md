@@ -32,10 +32,17 @@ build.bat
 
 ### Горячие клавиши
 
-Пробел — пауза · **I** — информация о файле (EXIF, GPS и название места, теги, путь, размер, разрешение…;
-текст можно выделять и копировать, двойной щелчок выделяет значение строки) · ← — предыдущий
-(история до 100 000 файлов) · → — следующий · **P** — поделиться (почта через MAPI; Telegram/WhatsApp/Facebook —
-файл копируется в буфер обмена и приложение открывается, останется вставить) · Esc — выход.
+Пробел — пауза · **I** — окно информации о файле · ← — предыдущий (история до 100 000 файлов) · → — следующий ·
+Esc — выход.
+
+Окно информации (EXIF, GPS и название места, теги, путь, размер, разрешение…; текст можно выделять и копировать,
+двойной щелчок выделяет значение строки) одновременно служит окном действий — под текстом три кнопки:
+- **Поделиться...** — открывает по центру окно, в котором на каждое действие своя кнопка: **E-mail** (MAPI, файл во вложении), **Telegram**,
+  **WhatsApp**, **Facebook** (файл копируется в буфер обмена и приложение открывается, останется вставить),
+  **Копировать изображение** (только для фото), **Копировать полный путь**, **Копировать имя файла**;
+- **Удалить** — удалить показанный файл после подтверждения (в корзину; файл на сетевом ресурсе удаляется
+  безвозвратно; недоступно для файлов с HTTP/FTP);
+- **Закрыть** — закрывает только окно информации (как повторное нажатие **I**), показ продолжается.
 
 ### Конфигурация и язык
 
@@ -132,10 +139,17 @@ To install the screensaver: right-click the `.scr` → "Install".
 
 ### Hotkeys
 
-Space — pause · **I** — file information (EXIF, GPS and place name, tags, path, size, resolution…;
-the text can be selected and copied, a double click selects the value of a line) · ← — previous
-(history up to 100,000 files) · → — next · **P** — share (e-mail via MAPI; Telegram/WhatsApp/Facebook —
-the file is copied to the clipboard and the application is opened, you only have to paste) · Esc — exit.
+Space — pause · **I** — the file information dialog · ← — previous (history up to 100,000 files) · → — next ·
+Esc — exit.
+
+The information dialog (EXIF, GPS and place name, tags, path, size, resolution…; the text can be selected and
+copied, a double click selects the value of a line) is also the dialog of actions — three buttons under the text:
+- **Share...** — opens a dialog in the middle with a separate button for every action: **E-mail** (MAPI, the file is attached), **Telegram**,
+  **WhatsApp**, **Facebook** (the file is copied to the clipboard and the application is opened, you only have
+  to paste), **Copy image** (photos only), **Copy full path**, **Copy file name**;
+- **Delete** — delete the shown file after a confirmation (to the Recycle Bin; a file on a network share is
+  deleted permanently; not available for HTTP/FTP files);
+- **Close** — closes only the information dialog (like pressing **I** again), the slideshow goes on.
 
 ### Configuration and language
 

@@ -7,7 +7,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Generics.Collections,
   Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
-  WMPLib, uConfig, uMedia, uSlideView, uOverlay;
+  WMPLib, uConfig, uMedia, uSlideView, uOverlay, uShareDialog;
 
 type
   TViewerMode = (vmStandalone, vmScreenSaver);
@@ -33,6 +33,9 @@ type
     FStatus: TLabel;
     FInfoPanel: TPanel;      // gray frame
     FInfoInner: TPanel;      // dark background of the text
+    FShareBtn: TButton;      // opens the share dialog
+    FDeleteBtn: TButton;     // deletes the file
+    FCloseBtn: TButton;      // closes the information dialog
     FInfoText: TMemo;        // read-only: text can be selected and copied
     FTimer: TTimer;
     FPaused: Boolean;
@@ -74,8 +77,12 @@ type
     procedure ShowInfoPanel(const AText: string);
     procedure InfoDblClick(Sender: TObject);
     function BuildInfo: string;
-    procedure DoShare;
-    procedure ShareClick(Sender: TObject);
+    procedure CreateInfoButtons;
+    procedure ShareButtonClick(Sender: TObject);
+    procedure DeleteButtonClick(Sender: TObject);
+    procedure CloseButtonClick(Sender: TObject);
+    procedure PerformShareAction(AAction: TShareAction);
+    procedure DeleteCurrentFile;
     procedure OpenSettings;
     procedure CreateBlankForms;
   protected
@@ -95,9 +102,11 @@ procedure LoadPhotoPicture(APicture: TPicture; const APath: string);
 
 implementation
 
+{$R *.DFM}
+
 uses
   System.IOUtils, System.DateUtils, System.StrUtils, System.Math, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
-  Winapi.Wincodec, uVersion, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
+  Winapi.Wincodec, Winapi.ShellAPI, uVersion, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
 
 var
   GViewer: TViewerForm;   // for the callbacks of background threads (never a dangling Self)
@@ -231,10 +240,11 @@ begin
   FInfoText.Color := $202020;
   FInfoText.Font.Color := clWhite;
   FInfoText.Font.Name := 'Consolas';
-  FInfoText.Font.Size := 13;
+  FInfoText.Font.Size := 11;
   FInfoText.Cursor := crIBeam;
   FInfoText.WordWrap := True;
   FInfoText.OnDblClick := InfoDblClick;
+  CreateInfoButtons;
 
   FTimer := TTimer.Create(Self);
   FTimer.Enabled := False;
@@ -405,9 +415,6 @@ begin
     Ord('I'):
       if not ARepeat then
         ToggleInfo;
-    Ord('P'):
-      if not ARepeat then
-        DoShare;
     Ord('C'):
       if (FMode = vmStandalone) and not ARepeat then
         OpenSettings
@@ -826,11 +833,14 @@ procedure TViewerForm.ShowInfoPanel(const AText: string);
 const
   Pad = 28;
   Border = 2;
+  BtnH = 25;   // the default height of the buttons
 var
   vSl: TStringList;
-  vMaxW, vCap, vHeight, vLineH, i: Integer;
+  vMaxW, vCap, vHeight, vLineH, i, vBtnW, vDelW, vCloseW, vContentW, vY: Integer;
   vRect: TRect;
 begin
+  FInfoText.Font.Name := Settings.InfoFontName;   // configurable
+  FInfoText.Font.Size := Settings.InfoFontSize;
   Canvas.Font.Assign(FInfoText.Font);
   vLineH := Canvas.TextHeight('Wg');
   vSl := TStringList.Create;
@@ -858,11 +868,27 @@ begin
   finally
     vSl.Free;
   end;
+  // three buttons below the text: Share (the share dialog with the actions), Delete (only for the files
+  // of this computer or of the network) and Close at the right edge
+  FShareBtn.Caption := L('Поделиться...', 'Share...');
+  FDeleteBtn.Caption := L('Удалить', 'Delete');
+  FDeleteBtn.Enabled := FCurrentItem.SourceKind in [skLocal, skNetwork];
+  FCloseBtn.Caption := L('Закрыть', 'Close');
+  Canvas.Font.Assign(FShareBtn.Font);
+  vBtnW := Canvas.TextWidth(FShareBtn.Caption) + 44;
+  vDelW := Canvas.TextWidth(FDeleteBtn.Caption) + 44;
+  vCloseW := Canvas.TextWidth(FCloseBtn.Caption) + 44;
+  vContentW := Max(vMaxW, vBtnW + 2 * vDelW + vCloseW + 48);
+
   FInfoText.Text := AText.TrimRight;
-  FInfoText.SetBounds(Pad, Pad, vMaxW, vHeight + 4);
+  FInfoText.SetBounds(Pad, Pad, vContentW, vHeight + 4);
   FInfoText.HandleNeeded;
   FInfoText.Perform(EM_SETMARGINS, EC_LEFTMARGIN or EC_RIGHTMARGIN, 0);
-  FInfoInner.SetBounds(Border, Border, FInfoText.Width + 2 * Pad, FInfoText.Height + 2 * Pad);
+  vY := Pad + vHeight + 4 + 20;
+  FShareBtn.SetBounds(Pad, vY, vBtnW, BtnH);
+  FDeleteBtn.SetBounds(Pad + vBtnW + vDelW, vY, vDelW, BtnH);   // a gap of its own width after Share
+  FCloseBtn.SetBounds(Pad + vContentW - vCloseW, vY, vCloseW, BtnH);   // Close: the right edge
+  FInfoInner.SetBounds(Border, Border, vContentW + 2 * Pad, vY + BtnH + Pad);
   FInfoPanel.SetBounds(0, 0, FInfoInner.Width + 2 * Border, FInfoInner.Height + 2 * Border);
   FInfoPanel.Left := (ClientWidth - FInfoPanel.Width) div 2;
   FInfoPanel.Top := (ClientHeight - FInfoPanel.Height) div 2;
@@ -1146,50 +1172,146 @@ begin
     FOverlay.Refit;
 end;
 
-procedure TViewerForm.DoShare;
-var
-  vMenu: TPopupMenu;
-  vTarget: TShareTarget;
-  vItem: TMenuItem;
-  vPt: TPoint;
+procedure TViewerForm.CreateInfoButtons;
 begin
-  if not FHasCurrent or (FCurrentPath = '') then
-    Exit;
-  // pause while the share menu is open
-  if not FPaused and not FInfoShown then
-    TogglePause;
+  FShareBtn := TButton.Create(Self);
+  FShareBtn.Parent := FInfoInner;
+  FShareBtn.Font.Name := 'Segoe UI';
+  FShareBtn.Font.Size := 10;
+  FShareBtn.OnClick := ShareButtonClick;
+  FDeleteBtn := TButton.Create(Self);
+  FDeleteBtn.Parent := FInfoInner;
+  FDeleteBtn.Font.Name := 'Segoe UI';
+  FDeleteBtn.Font.Size := 10;
+  FDeleteBtn.OnClick := DeleteButtonClick;
+  FCloseBtn := TButton.Create(Self);
+  FCloseBtn.Parent := FInfoInner;
+  FCloseBtn.Font.Name := 'Segoe UI';
+  FCloseBtn.Font.Size := 10;
+  FCloseBtn.OnClick := CloseButtonClick;
+end;
+
+{ The only button of the information dialog: the share dialog with the actions that are possible for the file. }
+procedure TViewerForm.ShareButtonClick(Sender: TObject);
+var
+  vActions: TShareActions;
+  vAction: TShareAction;
+  vChosen: Boolean;
+begin
+  vActions := [];
+  if (FCurrentPath <> '') and FileExists(FCurrentPath) then
+    vActions := vActions + [saEmail, saTelegram, saWhatsApp, saFacebook];
+  if (FCurrentItem.Kind = mkPhoto) and FView.HasPicture then
+    Include(vActions, saCopyImage);
+  vActions := vActions + [saCopyPath, saCopyName];
   FBusy := True;
-  vMenu := TPopupMenu.Create(Self);
   try
-    for vTarget := Low(TShareTarget) to High(TShareTarget) do
-    begin
-      vItem := TMenuItem.Create(vMenu);
-      vItem.Caption := ShareTargetTitle(vTarget);
-      vItem.Tag := Ord(vTarget);
-      vItem.OnClick := ShareClick;
-      vMenu.Items.Add(vItem);
-    end;
-    Screen.Cursor := crDefault;
-    GetCursorPos(vPt);
-    vMenu.Popup(vPt.X, vPt.Y);
-    Application.ProcessMessages;
+    vChosen := ShowShareDialog(Self, FCurrentItem.DisplayName, vActions, vAction);
   finally
     FBusy := False;
-    vMenu.Free;
-    if FMode = vmScreenSaver then
-      Screen.Cursor := crNone;
-    GetCursorPos(FStartPt);
+  end;
+  if vChosen then
+    PerformShareAction(vAction);
+  // the keyboard stays on the text, so Space / I / arrows work as before
+  if FInfoShown and FInfoText.CanFocus then
+    FInfoText.SetFocus;
+end;
+
+procedure TViewerForm.DeleteButtonClick(Sender: TObject);
+begin
+  DeleteCurrentFile;
+  if FInfoShown and FInfoText.CanFocus then   // cancelled: the keyboard stays on the text
+    FInfoText.SetFocus;
+end;
+
+procedure TViewerForm.CloseButtonClick(Sender: TObject);
+begin
+  HideInfo;   // the same as the I key: the slideshow goes on
+end;
+
+procedure TViewerForm.PerformShareAction(AAction: TShareAction);
+begin
+  case AAction of
+    saEmail, saTelegram, saWhatsApp, saFacebook:
+      begin
+        FBusy := True;
+        try
+          try
+            ShareFile(TShareTarget(Ord(AAction)), FCurrentPath);
+          except
+            on E: Exception do
+              Application.MessageBox(PChar(E.Message), PChar(L('Поделиться', 'Share')), MB_OK or MB_ICONWARNING);
+          end;
+        finally
+          FBusy := False;
+        end;
+      end;
+    saCopyImage:
+      if not FView.CopyPictureToClipboard then
+        MessageBeep(MB_ICONASTERISK);
+    saCopyPath:
+      Clipboard.AsText := FCurrentItem.Location;
+    saCopyName:
+      Clipboard.AsText := FCurrentItem.DisplayName;
   end;
 end;
 
-procedure TViewerForm.ShareClick(Sender: TObject);
+{ Deletes the shown file (to the Recycle Bin; a file on a network share is deleted for good) and goes on. }
+procedure TViewerForm.DeleteCurrentFile;
+var
+  vItem: TMediaItem;
+  vMsg, vBuf: string;
+  vOp: TSHFileOpStruct;
+  i: Integer;
 begin
+  if not FHasCurrent or not (FCurrentItem.SourceKind in [skLocal, skNetwork]) then
+    Exit;
+  vItem := FCurrentItem;
+  if vItem.SourceKind = skNetwork then
+    vMsg := L('Файл будет удалён без возможности восстановления.', 'The file will be deleted permanently.')
+  else
+    vMsg := L('Файл будет перемещён в корзину.', 'The file will be moved to the Recycle Bin.');
+  FBusy := True;
   try
-    ShareFile(TShareTarget((Sender as TMenuItem).Tag), FCurrentPath);
-  except
-    on E: Exception do
-      Application.MessageBox(PChar(E.Message), PChar(L('Поделиться', 'Share')), MB_OK or MB_ICONWARNING);
+    if Application.MessageBox(PChar(L('Удалить файл?', 'Delete the file?') + #13#10#13#10 + vItem.Location +
+      #13#10#13#10 + vMsg), PChar(L('Удаление', 'Delete')), MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON2) <> IDYES then
+      Exit;
+  finally
+    FBusy := False;
   end;
+  if vItem.Kind = mkVideo then
+  begin
+    FPlayer.controls.stop;   // release the file
+    FPlayer.URL := '';
+  end;
+  vBuf := vItem.Location + #0;   // the list of the files ends with a double zero
+  FillChar(vOp, SizeOf(vOp), 0);
+  vOp.Wnd := Handle;
+  vOp.wFunc := FO_DELETE;
+  vOp.pFrom := PChar(vBuf);
+  vOp.fFlags := FOF_ALLOWUNDO or FOF_NOCONFIRMATION or FOF_SILENT or FOF_NOERRORUI;
+  if (SHFileOperation(vOp) <> 0) or vOp.fAnyOperationsAborted or FileExists(vItem.Location) then
+  begin
+    FBusy := True;
+    try
+      Application.MessageBox(PChar(L('Не удалось удалить файл.', 'The file could not be deleted.')),
+        PChar(L('Удаление', 'Delete')), MB_OK or MB_ICONWARNING);
+    finally
+      FBusy := False;
+    end;
+    Exit;
+  end;
+  // forget the file: the catalog and the history (it can be there several times)
+  FCatalog.Remove(vItem.Location);
+  for i := Integer(FHistory.Count) - 1 downto 0 do
+    if SameText(FHistory[i].Location, vItem.Location) then
+    begin
+      FHistory.Delete(i);
+      if i <= FHistPos then
+        Dec(FHistPos);
+    end;
+  HideInfo;
+  GoNext;
 end;
 
 procedure TViewerForm.OpenSettings;

@@ -53,6 +53,8 @@ type
     CustomTags: TList<TInfoCustomTag>;
     OverlayFields: TStringList;       // built-in fields shown over the photo / video (own tags: CustomTags[].Overlay)
     OverlayPosition: Integer;         // 0..8: 3 x 3 places, row by row from the top left
+    InfoFontName: string;             // the font of the text of the information window (key I)
+    InfoFontSize: Integer;            // points
     OverlayFontName: string;
     OverlayFontSize: Integer;         // points
     OverlayShowNames: Boolean;        // "Caption: value" instead of the value only
@@ -159,6 +161,8 @@ begin
   ExcludeRaw := True;
   OverlayFields.Add('file');   // by default the file name is shown over the image, bottom right
   OverlayPosition := 8;
+  InfoFontName := 'Consolas';
+  InfoFontSize := 11;
   OverlayFontName := 'Segoe UI';
   OverlayFontSize := 10;
   OverlayShowNames := False;
@@ -233,6 +237,8 @@ begin
     for i := 0 to High(OverlayPositionNames) do
       if vName = OverlayPositionNames[i] then
         OverlayPosition := i;
+    InfoFontName := vIni.ReadString('Info', 'FontName', InfoFontName);
+    InfoFontSize := Max(8, Min(48, vIni.ReadInteger('Info', 'FontSize', InfoFontSize)));
     OverlayFontName := vIni.ReadString('Overlay', 'FontName', OverlayFontName);
     OverlayFontSize := Max(8, Min(96, vIni.ReadInteger('Overlay', 'FontSize', 10)));
     OverlayShowNames := vIni.ReadBool('Overlay', 'ShowNames', False);
@@ -322,6 +328,8 @@ begin
       vIni.WriteString('Exclude', 'Folder' + IntToStr(i + 1), ExcludedFolders[i]);
     vIni.WriteString('Overlay', 'Fields', OverlayFields.CommaText);
     vIni.WriteString('Overlay', 'Position', OverlayPositionNames[Max(0, Min(8, OverlayPosition))]);
+    vIni.WriteString('Info', 'FontName', InfoFontName);
+    vIni.WriteInteger('Info', 'FontSize', InfoFontSize);
     vIni.WriteString('Overlay', 'FontName', OverlayFontName);
     vIni.WriteInteger('Overlay', 'FontSize', OverlayFontSize);
     vIni.WriteBool('Overlay', 'ShowNames', OverlayShowNames);

@@ -9,7 +9,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Math, Vcl.Controls,
-  Vcl.Graphics, Vcl.ExtCtrls, uConfig;
+  Vcl.Graphics, Vcl.ExtCtrls, Vcl.Clipbrd, uConfig;
 
 type
   { forward: the next photo (new one comes from the right / the wipe goes to the right);
@@ -55,6 +55,8 @@ type
     { Shows nothing (black); a running transition is dropped without OnFadedOut }
     procedure Clear;
     function HasPicture: Boolean;
+    { Puts the photo (original size) on the clipboard as an image }
+    function CopyPictureToClipboard: Boolean;
     function PictureWidth: Integer;
     function PictureHeight: Integer;
     property OnFadedOut: TNotifyEvent read FOnFadedOut write FOnFadedOut;
@@ -98,6 +100,25 @@ end;
 function TSlideView.HasPicture: Boolean;
 begin
   Result := FHasCurrent and (FPicture.Width > 0);
+end;
+
+function TSlideView.CopyPictureToClipboard: Boolean;
+var
+  vBmp: TBitmap;
+begin
+  Result := False;
+  if (FPicture.Graphic = nil) or (FPicture.Width <= 0) or (FPicture.Height <= 0) then
+    Exit;
+  vBmp := TBitmap.Create;
+  try
+    vBmp.PixelFormat := pf24bit;
+    vBmp.SetSize(FPicture.Width, FPicture.Height);
+    vBmp.Canvas.Draw(0, 0, FPicture.Graphic);
+    Clipboard.Assign(vBmp);
+    Result := True;
+  finally
+    vBmp.Free;
+  end;
 end;
 
 function TSlideView.PictureWidth: Integer;

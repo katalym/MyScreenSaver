@@ -32,6 +32,8 @@ type
 
 implementation
 
+{$R *.DFM}
+
 const
   Pad = 12;       // between the text and the border of the overlay
   Margin = 24;    // between the overlay and the border of the image
