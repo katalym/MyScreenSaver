@@ -31,7 +31,8 @@ type
   TInfoCustomTag = record
     Tag: Integer;
     Caption: string;
-    Enabled: Boolean;
+    Enabled: Boolean;         // shown in the information dialog
+    Overlay: Boolean;         // shown over the photo / video
   end;
 
   TAppSettings = class
@@ -50,6 +51,11 @@ type
     InfoFields: TStringList;          // enabled built-in fields of the information dialog (key I)
     InfoFieldsConfigured: Boolean;    // False: all fields are shown (default)
     CustomTags: TList<TInfoCustomTag>;
+    OverlayFields: TStringList;       // built-in fields shown over the photo / video (own tags: CustomTags[].Overlay)
+    OverlayPosition: Integer;         // 0..8: 3 x 3 places, row by row from the top left
+    OverlayFontName: string;
+    OverlayFontSize: Integer;         // points
+    OverlayShowNames: Boolean;        // "Caption: value" instead of the value only
     DefaultRule: string;
     DayTolerance: Integer;       // "on this day": +/- days
     HomeName: string;
@@ -81,6 +87,11 @@ uses
 const
   { names of the effects in the INI file, in the order of TTransitionEffect }
   TransitionNames: array[TTransitionEffect] of string = ('none', 'fade', 'black', 'slide', 'wipe', 'random');
+
+  { places of the overlay, row by row from the top left }
+  OverlayPositionNames: array[0..8] of string =
+    ('topleft', 'topcenter', 'topright', 'middleleft', 'center', 'middleright', 'bottomleft', 'bottomcenter',
+     'bottomright');
 
 var
   GSettings: TAppSettings;
@@ -136,6 +147,7 @@ begin
   ActiveRules := TStringList.Create;
   InfoFields := TStringList.Create;
   ExcludedFolders := TStringList.Create;
+  OverlayFields := TStringList.Create;
   CustomTags := TList<TInfoCustomTag>.Create;
   SlideSeconds := 4;
   Mode := smRandom;
@@ -145,6 +157,11 @@ begin
   SilentVideo := True;
   SkipLargeVideos := True;
   ExcludeRaw := True;
+  OverlayFields.Add('file');   // by default the file name is shown over the image, bottom right
+  OverlayPosition := 8;
+  OverlayFontName := 'Segoe UI';
+  OverlayFontSize := 10;
+  OverlayShowNames := False;
   DefaultRule := 'random';
   DayTolerance := 0;
   HomeRadiusKm := 50;
@@ -155,6 +172,7 @@ end;
 
 destructor TAppSettings.Destroy;
 begin
+  FreeAndNil(OverlayFields);
   FreeAndNil(ExcludedFolders);
   FreeAndNil(CustomTags);
   FreeAndNil(InfoFields);
@@ -208,6 +226,16 @@ begin
     for i := 1 to vCount do
       if vIni.ReadString('Exclude', 'Folder' + IntToStr(i), '') <> '' then
         ExcludedFolders.Add(vIni.ReadString('Exclude', 'Folder' + IntToStr(i), ''));
+    if vIni.ValueExists('Overlay', 'Fields') then
+      OverlayFields.CommaText := vIni.ReadString('Overlay', 'Fields', '');
+    vName := LowerCase(vIni.ReadString('Overlay', 'Position', 'bottomright'));
+    OverlayPosition := 8;
+    for i := 0 to High(OverlayPositionNames) do
+      if vName = OverlayPositionNames[i] then
+        OverlayPosition := i;
+    OverlayFontName := vIni.ReadString('Overlay', 'FontName', OverlayFontName);
+    OverlayFontSize := Max(8, Min(96, vIni.ReadInteger('Overlay', 'FontSize', 10)));
+    OverlayShowNames := vIni.ReadBool('Overlay', 'ShowNames', False);
     if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'photos') then
       MediaTypes := mtPhotos
     else if SameText(vIni.ReadString('General', 'MediaTypes', 'both'), 'videos') then
@@ -243,6 +271,7 @@ begin
         else
           vTag.Caption := '';
         vTag.Enabled := (Length(vParts) < 3) or (vParts[2] <> '0');
+        vTag.Overlay := (Length(vParts) >= 4) and (vParts[3] = '1');
         CustomTags.Add(vTag);
       end;
     end;
@@ -291,6 +320,11 @@ begin
     vIni.WriteInteger('Exclude', 'Count', Integer(ExcludedFolders.Count));
     for i := 0 to Integer(ExcludedFolders.Count) - 1 do
       vIni.WriteString('Exclude', 'Folder' + IntToStr(i + 1), ExcludedFolders[i]);
+    vIni.WriteString('Overlay', 'Fields', OverlayFields.CommaText);
+    vIni.WriteString('Overlay', 'Position', OverlayPositionNames[Max(0, Min(8, OverlayPosition))]);
+    vIni.WriteString('Overlay', 'FontName', OverlayFontName);
+    vIni.WriteInteger('Overlay', 'FontSize', OverlayFontSize);
+    vIni.WriteBool('Overlay', 'ShowNames', OverlayShowNames);
     case MediaTypes of
       mtPhotos: vIni.WriteString('General', 'MediaTypes', 'photos');
       mtVideos: vIni.WriteString('General', 'MediaTypes', 'videos');
@@ -312,7 +346,8 @@ begin
     vIni.WriteInteger('Info', 'CustomCount', Integer(CustomTags.Count));
     for i := 0 to Integer(CustomTags.Count) - 1 do
       vIni.WriteString('Info', 'Custom' + IntToStr(i + 1),
-        Format('0x%.4X|%s|%d', [CustomTags[i].Tag, CustomTags[i].Caption, Ord(CustomTags[i].Enabled)]));
+        Format('0x%.4X|%s|%d|%d', [CustomTags[i].Tag, CustomTags[i].Caption, Ord(CustomTags[i].Enabled),
+          Ord(CustomTags[i].Overlay)]));
 
     vIni.WriteInteger('Collections', 'Count', Integer(Collections.Count));
     i := 0;

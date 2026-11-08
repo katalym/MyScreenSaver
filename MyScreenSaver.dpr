@@ -19,12 +19,11 @@ uses
   uRules in 'uRules.pas',
   uShare in 'uShare.pas',
   uInfoFields in 'uInfoFields.pas',
-  uInfoFieldsForm in 'uInfoFieldsForm.pas',
-  uFiltersForm in 'uFiltersForm.pas',
-  uSettingsForm in 'uSettingsForm.pas',
+  uSettingsForm in 'uSettingsForm.pas' {SettingsForm},
+  uOverlay in 'uOverlay.pas' {OverlayWindow},
   uSlideView in 'uSlideView.pas',
-  uViewer in 'uViewer.pas',
-  uPreview in 'uPreview.pas',
+  uViewer in 'uViewer.pas' {ViewerForm},
+  uPreview in 'uPreview.pas' {PreviewForm},
   WMPLib in 'WMPLib.pas';
 
 {$R 'MyScreenSaverVersion.res'}   // version resource, built from MyScreenSaverVersion.rc

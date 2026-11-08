@@ -11,6 +11,8 @@ function InfoFieldTitle(const AId: string): string;
 function InfoFieldHint(const AId: string): string;
 { True if the field is switched on (until the user changes the choice: the default set) }
 function InfoFieldOn(const AId: string): Boolean;
+{ True if the field is shown over the photo / video (nothing by default) }
+function OverlayFieldOn(const AId: string): Boolean;
 
 implementation
 
@@ -107,6 +109,11 @@ begin
   for vId in DefaultInfoFields do
     if vId = AId then
       Exit(True);
+end;
+
+function OverlayFieldOn(const AId: string): Boolean;
+begin
+  Result := Settings.OverlayFields.IndexOf(AId) >= 0;
 end;
 
 end.

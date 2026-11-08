@@ -39,24 +39,27 @@ build.bat
 
 ### Конфигурация и язык
 
-Окно настроек (`/c` или клавиша **C**): коллекции (локальные, UNC, HTTP-листинг, FTP), время показа, режим
-(полностью случайный / по правилам), переход между слайдами и его длительность в миллисекундах, что показывать (флажки «Показывать фото» и «Показывать видео»; если
-отмечены оба, показываются оба типа; хотя бы один флажок всегда отмечен), правила, **язык интерфейса: Русский (Russian) или English (Английский)**.
-По умолчанию язык берётся из языка Windows.
+Окно настроек (`/c` или клавиша **C**) — одна форма с вкладками; над вкладками выбор **языка интерфейса:
+Русский (Russian) или English (Английский)** (по умолчанию язык Windows). Кнопка «Сохранить» применяет всё сразу.
 
-Кнопка **«Фильтры...»**: воспроизводить видео без звука (по умолчанию включено: звук выключен); пропускать видео, у которых
-больше пикселей, чем у экрана (по умолчанию включено; проверяется при начале воспроизведения, ролик
-останавливается и выбирается следующий); исключить RAW-файлы (ARW, DNG, CR2, CR3, NEF, ORF, RAF, RW2 и др.;
-по умолчанию включено — RAW показываются только если флажок снят и в Windows есть кодек); список исключённых
-папок (файлы в них и в подпапках не показываются; локальные, сетевые и HTTP/FTP-адреса). В INI: `SilentVideo`,
-`SkipLargeVideos`, `ExcludeRaw` в `[General]` и раздел `[Exclude]` (`Count=`, `FolderN=`).
-
-Кнопка **«Поля окна информации (I)...»**: какие поля показывает окно информации (клавиша **I**) — все
-встроенные поля (файл, размер, камера, теги XP / IPTC / XMP, дата съёмки, GPS, место и т. д.) можно
-включать и выключать. По умолчанию включены: файл, коллекция, расположение, разрешение, длительность,
-теги XP, теги IPTC/XMP, дата съёмки, GPS, место. Кнопка «Добавить EXIF-тег...» добавляет свой тег по номеру (например
-`0x010E` описание, `0x013B` автор, `0x9286` комментарий) с необязательным названием; такие теги
-показываются для JPEG после встроенных полей. В INI: раздел `[Info]` (`Fields=...`, `CustomN=0x9286|Название|1`).
+- **Медиаколлекции** — коллекции для показа (локальные папки, UNC, HTTP-листинг, FTP; отмеченные используются)
+  и исключённые папки / подпапки (файлы в них не показываются; локальные, сетевые и HTTP/FTP-адреса).
+- **Типы файлов** — что показывать (флажки «Показывать фото» и «Показывать видео»; хотя бы один всегда отмечен),
+  видео без звука (по умолчанию включено: звук выключен), пропуск видео, у которых больше пикселей, чем у экрана
+  (по умолчанию включено; проверяется при начале воспроизведения), исключение RAW-файлов (ARW, DNG, CR2, CR3, NEF,
+  ORF, RAF, RW2 и др.; по умолчанию включено — RAW показываются, только если флажок снят и в Windows есть кодек).
+- **Показ** — слайд-шоу: время показа, режим выбора (полностью случайный / по правилам), переход между слайдами
+  и его длительность, активные правила, правило по умолчанию и параметры правил («в этот день», текущее место).
+- **Информация** — поля окна информации (клавиша **I**): все встроенные поля (файл, размер, камера, теги XP /
+  IPTC / XMP, дата съёмки, GPS, место и т. д.) можно включать и выключать (по умолчанию включены: файл, коллекция,
+  расположение, разрешение, длительность, теги XP, теги IPTC/XMP, дата съёмки, GPS, место); «Добавить EXIF-тег...»
+  добавляет свой тег по номеру (например `0x010E` описание, `0x013B` автор, `0x9286` комментарий) с необязательным
+  названием; такие теги показываются для JPEG после встроенных полей.
+- **Наложение** — поля поверх фото и видео: тот же список полей, что и на вкладке «Информация» (включая свои
+  EXIF-теги; по умолчанию отмечено только «Файл»), положение (3 × 3 места; по умолчанию снизу справа), шрифт и
+  размер в пунктах (по умолчанию Segoe UI, 10) и флажок «Показывать названия полей» (по умолчанию выключен). Текст рисуется на полупрозрачной тёмной плашке отдельным окном, поэтому виден и
+  поверх видео; окно информации (клавиша **I**) на время показа скрывает наложение. Название места по GPS
+  запрашивается в фоне, наложение обновляется, когда оно получено.
 
 Файл настроек: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; ключ `Language=ru|en` в `[General]`).
 Пароли коллекций хранятся в INI открытым текстом.
@@ -136,24 +139,27 @@ the file is copied to the clipboard and the application is opened, you only have
 
 ### Configuration and language
 
-Settings dialog (`/c` or key **C**): collections (local, UNC, HTTP listing, FTP), display time, selection mode
-(fully random / by rules), slide transition and its duration in milliseconds, what to show (check boxes "Show photos" and "Show videos"; if both are checked,
-both types are shown; at least one box always stays checked), rules, **interface language: Русский (Russian) or English (Английский)**.
-By default the language follows the Windows language.
+Settings dialog (`/c` or key **C**) — one form with tabs; above the tabs the **interface language:
+Русский (Russian) or English (Английский)** (the Windows language by default). "Save" applies everything at once.
 
-The **"Filters..."** button: play videos silently (on by default: the sound is off); skip videos that have more pixels than the
-screen (on by default; it is checked when a video starts to play, the video is stopped and the next one is
-chosen); exclude RAW files (ARW, DNG, CR2, CR3, NEF, ORF, RAF, RW2, etc.; on by default — RAW files are shown
-only if the box is unchecked and Windows has a codec for them); a list of excluded folders (files in them and in
-their subfolders are not shown; local, network and HTTP/FTP addresses). In the INI: `SilentVideo`,
-`SkipLargeVideos`, `ExcludeRaw` in `[General]` and the section `[Exclude]` (`Count=`, `FolderN=`).
-
-The **"Information dialog fields (I)..."** button: which fields the information dialog (key **I**) shows —
-all built-in fields (file, size, camera, XP / IPTC / XMP tags, date taken, GPS, place, etc.) can be
-switched on and off. On by default: file, collection, location, resolution, duration, XP tags, IPTC/XMP tags,
-date taken, GPS, place. "Add EXIF tag..." adds an own tag by its number (for example
-`0x010E` description, `0x013B` artist, `0x9286` user comment) with an optional caption; such tags are shown
-for JPEG after the built-in fields. In the INI: section `[Info]` (`Fields=...`, `CustomN=0x9286|Caption|1`).
+- **Media collections** — the collections to show (local folders, UNC, HTTP listing, FTP; checked ones are used)
+  and the excluded folders / subfolders (files in them are not shown; local, network and HTTP/FTP addresses).
+- **File types** — what to show (check boxes "Show photos" and "Show videos"; at least one always stays checked),
+  silent videos (on by default: the sound is off), skipping of videos that have more pixels than the screen
+  (on by default; checked when a video starts to play), exclusion of RAW files (ARW, DNG, CR2, CR3, NEF, ORF,
+  RAF, RW2, etc.; on by default — RAW files are shown only if the box is unchecked and Windows has a codec).
+- **Play** — the slideshow: display time, selection mode (fully random / by rules), slide transition and its
+  duration, active rules, the default rule and the rule parameters ("on this day", current place).
+- **Information** — the fields of the information dialog (key **I**): all built-in fields (file, size, camera,
+  XP / IPTC / XMP tags, date taken, GPS, place, etc.) can be switched on and off (on by default: file, collection,
+  location, resolution, duration, XP tags, IPTC/XMP tags, date taken, GPS, place); "Add EXIF tag..." adds an own
+  tag by its number (for example `0x010E` description, `0x013B` artist, `0x9286` user comment) with an optional
+  caption; such tags are shown for JPEG after the built-in fields.
+- **Overlay** — fields over the photos and videos: the same list of fields as on the "Information" tab (including
+  own EXIF tags; only "File" is checked by default), the position (3 x 3 places; bottom right by default), the
+  font and the size in points (Segoe UI, 10 by default) and the check box "Show the field names" (off by default). The text is drawn on a semi-transparent dark plate by a separate
+  window, so it is visible over a video as well; the information dialog (key **I**) hides the overlay while it is
+  shown. The place name from GPS is requested in the background, the overlay is updated when it has arrived.
 
 Settings file: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; key `Language=ru|en` in `[General]`).
 Collection passwords are stored in the INI as plain text.

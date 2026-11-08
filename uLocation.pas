@@ -11,6 +11,8 @@ function TryDetectLocationByIP(out ALat, ALon: Double): Boolean;
 { Human-friendly place name for coordinates (OpenStreetMap Nominatim, cached):
   attraction/park/lake, road, city, state, country. Empty string if unavailable. }
 function ReverseGeocode(ALat, ALon: Double; const ALanguage: string): string;
+{ The place name only if it is already in the cache of ReverseGeocode (no internet access). }
+function TryGetCachedGeocode(ALat, ALon: Double; const ALanguage: string; out APlace: string): Boolean;
 
 implementation
 
@@ -39,6 +41,19 @@ procedure AddPart(AParts: TStrings; const APart: string);
 begin
   if (APart <> '') and (AParts.IndexOf(APart) < 0) then
     AParts.Add(APart);
+end;
+
+function TryGetCachedGeocode(ALat, ALon: Double; const ALanguage: string; out APlace: string): Boolean;
+var
+  vKey: string;
+begin
+  vKey := Format('%.4f,%.4f,%s', [ALat, ALon, ALanguage], TFormatSettings.Invariant);
+  GGeoLock.Enter;
+  try
+    Result := GGeoCache.TryGetValue(vKey, APlace);
+  finally
+    GGeoLock.Leave;
+  end;
 end;
 
 function ReverseGeocode(ALat, ALon: Double; const ALanguage: string): string;

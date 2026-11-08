@@ -7,7 +7,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Generics.Collections,
   Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
-  WMPLib, uConfig, uMedia, uSlideView;
+  WMPLib, uConfig, uMedia, uSlideView, uOverlay;
 
 type
   TViewerMode = (vmStandalone, vmScreenSaver);
@@ -22,6 +22,7 @@ type
     FHistory: TList<TMediaItem>;
     FHistPos: Integer;
     FView: TSlideView;           // the photo with transitions
+    FOverlay: TOverlayWindow;    // selected fields over the photo / video
     FUserNav: Boolean;           // the move was made by the user (arrow keys): short transition
     FGoingBack: Boolean;         // the user goes to the previous slide
     FPendingVideo: string;       // a video waits until the photo has faded to black
@@ -49,7 +50,12 @@ type
     function HandleKey(AKey: Word; ARepeat: Boolean): Boolean;
     procedure TimerTick(Sender: TObject);
     procedure PlayerStateChange(ASender: TObject; ANewState: Integer);
-    procedure CheckVideoSize;
+    function CheckVideoSize: Boolean;
+    function BuildFieldText(AOverlay: Boolean): string;
+    function OverlayConfigured: Boolean;
+    procedure UpdateOverlay;
+    procedure StartPlaceLookup(ALat, ALon: Double; const AItemLocation: string);
+    procedure WMMove(var Msg: TWMMove); message WM_MOVE;
     procedure FitVideo;
     procedure PlayerError(Sender: TObject);
     procedure GoNext;
@@ -92,6 +98,9 @@ implementation
 uses
   System.IOUtils, System.DateUtils, System.StrUtils, System.Math, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
   Winapi.Wincodec, uVersion, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
+
+var
+  GViewer: TViewerForm;   // for the callbacks of background threads (never a dangling Self)
 
 const
   HistoryLimit = 100000;
@@ -144,6 +153,7 @@ end;
 constructor TViewerForm.Create(AOwner: TComponent);
 begin
   CreateNew(AOwner);
+  GViewer := Self;
   FMode := GViewerMode;
   FHistory := TList<TMediaItem>.Create;
   FHistPos := -1;
@@ -236,6 +246,8 @@ end;
 
 destructor TViewerForm.Destroy;
 begin
+  GViewer := nil;
+  FreeAndNil(FOverlay);
   Application.OnMessage := nil;
   // stop the background threads before the unit finalization frees their shared data
   StopScan;
@@ -485,6 +497,8 @@ end;
 
 procedure TViewerForm.ShowMessage(const AText: string);
 begin
+  if FOverlay <> nil then
+    FOverlay.HideOverlay;
   FPlayer.controls.stop;
   FVideoHost.Visible := False;
   FPendingVideo := '';
@@ -568,6 +582,7 @@ begin
     vPic.Free;
   end;
   ArmTimer;
+  UpdateOverlay;
 end;
 
 { A transition is never longer than half of the slide; the arrow keys use a short one. }
@@ -581,6 +596,8 @@ end;
 { A photo fades to black before the video starts (the video window cannot be blended). }
 procedure TViewerForm.ShowVideo(const APath: string);
 begin
+  if FOverlay <> nil then
+    FOverlay.HideOverlay;   // it is shown again when the video plays
   if (Settings.Transition <> teNone) and FView.Visible and FView.HasPicture and not FVideoHost.Visible then
   begin
     FPendingVideo := APath;
@@ -646,14 +663,17 @@ procedure TViewerForm.Resize;
 begin
   inherited;
   FitVideo;
+  if FOverlay <> nil then
+    FOverlay.Refit;
 end;
 
 { The video plays (its size is known now): a video with more pixels than the screen is stopped and
   skipped, the others become visible and get their sound. }
-procedure TViewerForm.CheckVideoSize;
+function TViewerForm.CheckVideoSize: Boolean;
 var
   vW, vH: Integer;
 begin
+  Result := True;
   if not FWaitingOpen then
     Exit;
   FWaitingOpen := False;
@@ -663,6 +683,7 @@ begin
     vH := FPlayer.currentMedia.imageSourceHeight;
     if (vW > 0) and (vH > 0) and (Int64(vW) * vH > Int64(Monitor.Width) * Monitor.Height) then
     begin
+      Result := False;   // too large: skipped
       FPlayer.controls.stop;
       Inc(FSkips);
       if (FHistPos >= 0) and (FHistPos < FHistory.Count) then
@@ -686,10 +707,11 @@ procedure TViewerForm.PlayerStateChange(ASender: TObject; ANewState: Integer);
 begin
   // 3 = wmppsPlaying: the size of the video is known
   if ANewState = 3 then
-  begin
-    CheckVideoSize;
-    FitVideo;
-  end;
+    if CheckVideoSize then
+    begin
+      FitVideo;
+      UpdateOverlay;   // the duration and the size of the video are known now
+    end;
   // 8 = wmppsMediaEnded
   if (ANewState = 8) and not FPaused and not FInfoShown then
   begin
@@ -752,6 +774,8 @@ begin
   if not FHasCurrent then
     Exit;
   FInfoShown := True;
+  if FOverlay <> nil then
+    FOverlay.HideOverlay;
   FTimer.Enabled := False;
   if FCurrentItem.Kind = mkVideo then
     FPlayer.controls.pause;
@@ -858,6 +882,7 @@ begin
     Exit;
   FInfoShown := False;
   FInfoPanel.Visible := False;
+  UpdateOverlay;
   if FMode = vmScreenSaver then
   begin
     Screen.Cursor := crNone;
@@ -876,7 +901,9 @@ begin
     ArmTimer;
 end;
 
-function TViewerForm.BuildInfo: string;
+{ The text of the selected fields of the current file: for the information dialog (AOverlay = False) or for
+  the overlay over the image (AOverlay = True). }
+function TViewerForm.BuildFieldText(AOverlay: Boolean): string;
 var
   vSl: TStringList;
   vExif: TExifInfo;
@@ -889,25 +916,50 @@ var
   vCustom: TArray<TInfoCustomTag>;
   i, vK: Integer;
 
+  function FieldOn(const AId: string): Boolean;
+  begin
+    if AOverlay then
+      Result := OverlayFieldOn(AId)
+    else
+      Result := InfoFieldOn(AId);
+  end;
+
+  function CustomOn(const ATag: TInfoCustomTag): Boolean;
+  begin
+    if AOverlay then
+      Result := ATag.Overlay
+    else
+      Result := ATag.Enabled;
+  end;
+
   procedure AddLine(const ACaption, AValue: string);
   begin
-    if AValue <> '' then
+    if AValue = '' then
+      Exit;
+    if AOverlay then
+    begin
+      if Settings.OverlayShowNames then
+        vSl.Add(ACaption + ': ' + AValue)
+      else
+        vSl.Add(AValue);
+    end
+    else
       vSl.Add(Format('%-18s %s', [ACaption + ':', AValue]));
   end;
 
   { a built-in field, only if it is switched on in the settings }
   procedure Add(const AId, AValue: string);
   begin
-    if InfoFieldOn(AId) then
+    if FieldOn(AId) then
       AddLine(InfoFieldTitle(AId), AValue);
   end;
 
-  { the same for the EXIF block; its header is printed before the first line }
+  { the same for the EXIF block; in the information dialog its header is printed before the first line }
   procedure AddExif(const AId, AValue: string);
   begin
-    if (AValue = '') or not InfoFieldOn(AId) then
+    if (AValue = '') or not FieldOn(AId) then
       Exit;
-    if not vExifHeader then
+    if not AOverlay and not vExifHeader then
     begin
       vSl.Add('');
       vSl.Add('--- EXIF ---');
@@ -953,17 +1005,29 @@ begin
         if vExif.HasGps then
         begin
           AddExif('gps', Format('%.6f, %.6f', [vExif.Lat, vExif.Lon], TFormatSettings.Invariant));
-          if InfoFieldOn('place') then
+          if FieldOn('place') then
           begin
-            Screen.Cursor := crHourGlass;
-            try
-              vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
-            finally
-              Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
+            if AOverlay then
+            begin
+              // the overlay never waits for the internet: the name is taken from the cache, or it is
+              // requested in the background and the overlay is updated when it has arrived
+              if TryGetCachedGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage), vPlace) then
+                AddExif('place', vPlace)
+              else
+                StartPlaceLookup(vExif.Lat, vExif.Lon, FCurrentItem.Location);
+            end
+            else
+            begin
+              Screen.Cursor := crHourGlass;
+              try
+                vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
+              finally
+                Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
+              end;
+              if vPlace = '' then
+                vPlace := L('(не удалось определить — нет интернета?)', '(could not be determined — no internet?)');
+              AddExif('place', vPlace);
             end;
-            if vPlace = '' then
-              vPlace := L('(не удалось определить — нет интернета?)', '(could not be determined — no internet?)');
-            AddExif('place', vPlace);
           end;
         end;
       end;
@@ -971,7 +1035,7 @@ begin
       vCustom := Settings.CustomTags.ToArray;
       SetLength(vTags, 0);
       for i := 0 to Integer(High(vCustom)) do
-        if vCustom[i].Enabled then
+        if CustomOn(vCustom[i]) then
         begin
           SetLength(vTags, Length(vTags) + 1);
           vTags[High(vTags)] := vCustom[i].Tag;
@@ -981,11 +1045,11 @@ begin
         vTexts := ReadExifTagTexts(FCurrentPath, vTags);
         i := 0;
         for vK := 0 to Integer(High(vCustom)) do
-          if vCustom[vK].Enabled then
+          if CustomOn(vCustom[vK]) then
           begin
             if vTexts[i] <> '' then
             begin
-              if not vExifHeader then
+              if not AOverlay and not vExifHeader then
               begin
                 vSl.Add('');
                 vSl.Add('--- EXIF ---');
@@ -1018,6 +1082,68 @@ begin
   finally
     vSl.Free;
   end;
+end;
+
+function TViewerForm.BuildInfo: string;
+begin
+  Result := BuildFieldText(False);
+end;
+
+function TViewerForm.OverlayConfigured: Boolean;
+var
+  vTag: TInfoCustomTag;
+begin
+  Result := Settings.OverlayFields.Count > 0;
+  if not Result then
+    for vTag in Settings.CustomTags do
+      if vTag.Overlay then
+        Exit(True);
+end;
+
+{ Shows (or hides) the overlay for the current file. }
+procedure TViewerForm.UpdateOverlay;
+var
+  vText: string;
+begin
+  if FHasCurrent and not FInfoShown and OverlayConfigured then
+    vText := Trim(BuildFieldText(True))
+  else
+    vText := '';
+  if vText = '' then
+  begin
+    if FOverlay <> nil then
+      FOverlay.HideOverlay;
+    Exit;
+  end;
+  if FOverlay = nil then
+    FOverlay := TOverlayWindow.CreateOverlay(Self, FMode = vmScreenSaver);
+  FOverlay.ShowText(vText);
+end;
+
+{ The place name for the overlay is requested in the background; the overlay is updated when it arrives. }
+procedure TViewerForm.StartPlaceLookup(ALat, ALon: Double; const AItemLocation: string);
+var
+  vLang: string;
+begin
+  vLang := LanguageCode(CurrentLanguage);
+  TThread.CreateAnonymousThread(
+    procedure
+    begin
+      ReverseGeocode(ALat, ALon, vLang);   // fills the cache
+      TThread.Queue(nil,
+        procedure
+        begin
+          if (GViewer <> nil) and GViewer.FHasCurrent and (GViewer.FCurrentItem.Location = AItemLocation) then
+            GViewer.UpdateOverlay;
+        end);
+    end).Start;
+end;
+
+procedure TViewerForm.WMMove(var Msg: TWMMove);
+begin
+  inherited;
+  if FOverlay <> nil then
+    FOverlay.Refit;
 end;
 
 procedure TViewerForm.DoShare;
