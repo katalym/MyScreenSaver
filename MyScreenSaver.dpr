@@ -28,7 +28,8 @@ uses
   uPreview in 'uPreview.pas' {PreviewForm},
   WMPLib in 'WMPLib.pas';
 
-{$R 'MyScreenSaverVersion.res'}   // version resource, built from MyScreenSaverVersion.rc
+{$R 'MyScreenSaverVersion.res' 'MyScreenSaverVersion.rc'}   // version resource, built from MyScreenSaverVersion.rc
+{$R *.res}
 
 var
   vArg: string;

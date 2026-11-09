@@ -55,8 +55,8 @@ Esc — выход.
   видео без звука (по умолчанию включено: звук выключен), пропуск видео, у которых больше пикселей, чем у экрана
   (по умолчанию включено; проверяется при начале воспроизведения), исключение RAW-файлов (ARW, DNG, CR2, CR3, NEF,
   ORF, RAF, RW2 и др.; по умолчанию включено — RAW показываются, только если флажок снят и в Windows есть кодек).
-- **Показ** — слайд-шоу: время показа, режим выбора (полностью случайный / по правилам), переход между слайдами
-  и его длительность, активные правила, правило по умолчанию и параметры правил («в этот день», текущее место).
+- **Показ** — слайд-шоу: время показа, переход между слайдами
+  и его длительность, активные правила (всегда выбрано хотя бы одно, по умолчанию «случайный файл»), применяемое правило и параметры правил («в этот день», текущее место).
 - **Информация** — поля окна информации (клавиша **I**): все встроенные поля (файл, размер, камера, теги XP /
   IPTC / XMP, дата съёмки, GPS, место и т. д.) можно включать и выключать (по умолчанию включены: файл, коллекция,
   расположение, разрешение, длительность, теги XP, теги IPTC/XMP, дата съёмки, GPS, место); «Добавить EXIF-тег...»
@@ -93,6 +93,7 @@ Esc — выход.
 
 `random` (по умолчанию), `onthisday` («в этот день» в прошлые годы, дата из EXIF или файла),
 `location` (снято в радиусе от текущего места; место задаётся в настройках или определяется по IP).
+Правила по порядку (по очереди, по кругу): `filenameasc`, `filenamedesc` (по имени файла), `fullnameasc`, `fullnamedesc` (по полному имени).
 Новое правило — наследник `TMediaRule` + регистрация в `initialization`.
 
 ### Языки (`uLang.pas`)
@@ -162,8 +163,8 @@ Settings dialog (`/c` or key **C**) — one form with tabs; above the tabs the *
   silent videos (on by default: the sound is off), skipping of videos that have more pixels than the screen
   (on by default; checked when a video starts to play), exclusion of RAW files (ARW, DNG, CR2, CR3, NEF, ORF,
   RAF, RW2, etc.; on by default — RAW files are shown only if the box is unchecked and Windows has a codec).
-- **Play** — the slideshow: display time, selection mode (fully random / by rules), slide transition and its
-  duration, active rules, the default rule and the rule parameters ("on this day", current place).
+- **Play** — the slideshow: display time, slide transition and its
+  duration, active rules (at least one is always selected, "random file" by default), the applied rule and the rule parameters ("on this day", current place).
 - **Information** — the fields of the information dialog (key **I**): all built-in fields (file, size, camera,
   XP / IPTC / XMP tags, date taken, GPS, place, etc.) can be switched on and off (on by default: file, collection,
   location, resolution, duration, XP tags, IPTC/XMP tags, date taken, GPS, place); "Add EXIF tag..." adds an own
@@ -200,6 +201,7 @@ a picture). In the INI: `Transition=none|fade|black|slide|wipe|random`, `Transit
 
 `random` (default), `onthisday` ("on this day" in previous years, date from EXIF or the file),
 `location` (taken within a radius of the current place; the place is set in the settings or detected by IP).
+Sequential rules (one after another, wrapping around): `filenameasc`, `filenamedesc` (by file name), `fullnameasc`, `fullnamedesc` (by full file name).
 A new rule is a descendant of `TMediaRule` plus a registration in `initialization`.
 
 ### Languages (`uLang.pas`)

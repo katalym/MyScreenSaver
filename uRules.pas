@@ -28,7 +28,7 @@ function PickMedia(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
 implementation
 
 uses
-  System.DateUtils, uLocation, uLang;
+  System.DateUtils, System.StrUtils, uLocation, uLang;
 
 type
   TRandomRule = class(TMediaRule)
@@ -53,6 +53,24 @@ type
     function Name: string; override;
     function Title: string; override;
     function Accepts(const AMeta: TMediaMeta): Boolean; override;
+  end;
+
+  { plays the files in the order of the file name (or of the full path), one after another;
+    the position is kept while the application runs and wraps around at the end }
+  TSequentialRule = class(TMediaRule)
+  private
+    FFullName: Boolean;
+    FDescending: Boolean;
+    FHasLast: Boolean;
+    FLast: TMediaItem;
+    function Compare(const A, B: TMediaItem): Integer;
+  public
+    constructor Create(AFullName, ADescending: Boolean);
+    function Name: string; override;
+    function Title: string; override;
+    function NeedsMeta: Boolean; override;
+    function Accepts(const AMeta: TMediaMeta): Boolean; override;
+    function PickNext(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
   end;
 
 var
@@ -148,6 +166,91 @@ begin
   Result := DistanceKm(vLat, vLon, AMeta.Lat, AMeta.Lon) <= Settings.HomeRadiusKm;
 end;
 
+{ TSequentialRule }
+
+constructor TSequentialRule.Create(AFullName, ADescending: Boolean);
+begin
+  inherited Create;
+  FFullName := AFullName;
+  FDescending := ADescending;
+end;
+
+function TSequentialRule.Name: string;
+begin
+  Result := IfThen(FFullName, 'fullname', 'filename') + IfThen(FDescending, 'desc', 'asc');
+end;
+
+function TSequentialRule.Title: string;
+begin
+  if FFullName then
+    Result := IfThen(FDescending, L('По полному имени файла, по убыванию', 'By full file name, descending'),
+      L('По полному имени файла, по возрастанию', 'By full file name, ascending'))
+  else
+    Result := IfThen(FDescending, L('По имени файла, по убыванию', 'By file name, descending'),
+      L('По имени файла, по возрастанию', 'By file name, ascending'));
+end;
+
+function TSequentialRule.NeedsMeta: Boolean;
+begin
+  Result := False;
+end;
+
+function TSequentialRule.Accepts(const AMeta: TMediaMeta): Boolean;
+begin
+  Result := True;
+end;
+
+{ Order of the rule (the direction is already applied). }
+function TSequentialRule.Compare(const A, B: TMediaItem): Integer;
+begin
+  if FFullName then
+    Result := CompareText(A.Location, B.Location)
+  else
+  begin
+    Result := CompareText(A.DisplayName, B.DisplayName);
+    if Result = 0 then
+      Result := CompareText(A.Location, B.Location);
+  end;
+  if FDescending then
+    Result := -Result;
+end;
+
+{ One pass: the smallest item after the previous one, otherwise (the end is reached) the smallest of all. }
+function TSequentialRule.PickNext(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
+var
+  i: Integer;
+  vItem, vAfter, vFirst: TMediaItem;
+  vHasAfter, vHasFirst: Boolean;
+begin
+  vHasAfter := False;
+  vHasFirst := False;
+  for i := 0 to ACatalog.Count - 1 do
+  begin
+    vItem := ACatalog.Get(i);
+    if not ItemAllowed(vItem) then
+      Continue;
+    if not vHasFirst or (Compare(vItem, vFirst) < 0) then
+    begin
+      vFirst := vItem;
+      vHasFirst := True;
+    end;
+    if FHasLast and (Compare(vItem, FLast) > 0) and (not vHasAfter or (Compare(vItem, vAfter) < 0)) then
+    begin
+      vAfter := vItem;
+      vHasAfter := True;
+    end;
+  end;
+  Result := vHasFirst;
+  if not Result then
+    Exit;
+  if vHasAfter then
+    AItem := vAfter
+  else
+    AItem := vFirst;
+  FLast := AItem;
+  FHasLast := True;
+end;
+
 { registry }
 
 function RuleByName(const AName: string): TMediaRule;
@@ -207,6 +310,8 @@ begin
   vCount := ACatalog.Count;
   if vCount = 0 then
     Exit;
+  if ARule is TSequentialRule then
+    Exit(TSequentialRule(ARule).PickNext(ACatalog, AItem));
   for i := 1 to MaxTries do
   begin
     vItem := ACatalog.Get(Random(vCount));
@@ -243,12 +348,10 @@ begin
   end;
   if ACatalog.Count = 0 then
     Exit;
-  if (Settings.Mode = smRules) and (Settings.ActiveRules.Count > 0) then
+  if Settings.ActiveRules.Count > 0 then
   begin
     vName := Settings.ActiveRules[Random(Settings.ActiveRules.Count)];
     if TryRule(ACatalog, RuleByName(vName), AItem) then
-      Exit(True);
-    if TryRule(ACatalog, RuleByName(Settings.DefaultRule), AItem) then
       Exit(True);
   end;
   Result := TryRule(ACatalog, RuleByName('random'), AItem);
@@ -260,6 +363,10 @@ initialization
   GRules.Add(TRandomRule.Create);
   GRules.Add(TOnThisDayRule.Create);
   GRules.Add(TNearLocationRule.Create);
+  GRules.Add(TSequentialRule.Create(False, False));
+  GRules.Add(TSequentialRule.Create(False, True));
+  GRules.Add(TSequentialRule.Create(True, False));
+  GRules.Add(TSequentialRule.Create(True, True));
 
 finalization
   FreeAndNil(GRules);

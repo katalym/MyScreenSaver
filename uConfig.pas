@@ -19,8 +19,6 @@ type
     function Kind: TSourceKind;
   end;
 
-  TSelectionMode = (smRandom, smRules);
-
   { effect between two slides }
   TTransitionEffect = (teNone, teFade, teFadeBlack, teSlide, teWipe, teRandom);
 
@@ -39,7 +37,6 @@ type
   public
     Collections: TList<TMediaCollection>;
     SlideSeconds: Integer;
-    Mode: TSelectionMode;
     MediaTypes: TMediaTypes;
     Transition: TTransitionEffect;
     TransitionMs: Integer;           // duration of the transition, milliseconds
@@ -58,7 +55,6 @@ type
     OverlayFontName: string;
     OverlayFontSize: Integer;         // points
     OverlayShowNames: Boolean;        // "Caption: value" instead of the value only
-    DefaultRule: string;
     DayTolerance: Integer;       // "on this day": +/- days
     HomeName: string;
     HomeLat: Double;
@@ -152,7 +148,7 @@ begin
   OverlayFields := TStringList.Create;
   CustomTags := TList<TInfoCustomTag>.Create;
   SlideSeconds := 4;
-  Mode := smRandom;
+  ActiveRules.Add('random');
   MediaTypes := mtBoth;
   Transition := teFade;
   TransitionMs := 800;
@@ -166,7 +162,6 @@ begin
   OverlayFontName := 'Segoe UI';
   OverlayFontSize := 10;
   OverlayShowNames := False;
-  DefaultRule := 'random';
   DayTolerance := 0;
   HomeRadiusKm := 50;
   AutoLocate := False;
@@ -211,11 +206,6 @@ begin
     SlideSeconds := vIni.ReadInteger('General', 'SlideSeconds', SlideSeconds);
     if SlideSeconds < 1 then
       SlideSeconds := 1;
-    if SameText(vIni.ReadString('General', 'Mode', 'random'), 'rules') then
-      Mode := smRules
-    else
-      Mode := smRandom;
-    DefaultRule := vIni.ReadString('General', 'DefaultRule', DefaultRule);
     vName := LowerCase(vIni.ReadString('General', 'Transition', 'fade'));
     Transition := teFade;
     for vEffect := Low(TTransitionEffect) to High(TTransitionEffect) do
@@ -248,7 +238,14 @@ begin
       MediaTypes := mtVideos
     else
       MediaTypes := mtBoth;
-    ActiveRules.CommaText := vIni.ReadString('General', 'ActiveRules', '');
+    ActiveRules.CommaText := vIni.ReadString('General', 'ActiveRules', 'random');
+    // the removed "Mode=random" setting of old files meant: no rules, only random files
+    if SameText(vIni.ReadString('General', 'Mode', 'rules'), 'random') then
+      ActiveRules.CommaText := 'random';
+    while ActiveRules.Count > 1 do
+      ActiveRules.Delete(ActiveRules.Count - 1);   // only one rule is active
+    if ActiveRules.Count = 0 then
+      ActiveRules.Add('random');
 
     DayTolerance := vIni.ReadInteger('Rules', 'DayTolerance', DayTolerance);
     HomeName := vIni.ReadString('Rules', 'HomeName', '');
@@ -313,11 +310,6 @@ begin
   vIni := TMemIniFile.Create(ConfigPath, TEncoding.UTF8);
   try
     vIni.WriteInteger('General', 'SlideSeconds', SlideSeconds);
-    if Mode = smRules then
-      vIni.WriteString('General', 'Mode', 'rules')
-    else
-      vIni.WriteString('General', 'Mode', 'random');
-    vIni.WriteString('General', 'DefaultRule', DefaultRule);
     vIni.WriteString('General', 'Transition', TransitionNames[Transition]);
     vIni.WriteInteger('General', 'TransitionMs', TransitionMs);
     vIni.WriteBool('General', 'SilentVideo', SilentVideo);

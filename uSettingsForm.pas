@@ -46,16 +46,11 @@ type
     // play
     FSecondsLabel: TLabel;
     FSeconds: TEdit;
-    FModeLabel: TLabel;
-    FMode: TComboBox;
     FTransLabel: TLabel;
     FTransition: TComboBox;
     FTransMsLabel: TLabel;
     FTransMs: TEdit;
-    FRulesLabel: TLabel;
-    FRules: TCheckListBox;
-    FDefaultLabel: TLabel;
-    FDefault: TComboBox;
+    FRules: TRadioGroup;     // the selected rule is the one applied
     FToleranceLabel: TLabel;
     FTolerance: TEdit;
     FHomeNameLabel: TLabel;
@@ -315,32 +310,26 @@ begin
   FSecondsLabel := NewLabel(FTabPlay, 12, 16);
   FSeconds := NewEdit(FTabPlay, 240, 13, 60);
 
-  FModeLabel := NewLabel(FTabPlay, 12, 48);
-  FMode := NewCombo(FTabPlay, 240, 45, 250);
+  FTransLabel := NewLabel(FTabPlay, 12, 48);
+  FTransition := NewCombo(FTabPlay, 240, 45, 165);
+  FTransMsLabel := NewLabel(FTabPlay, 420, 48);
+  FTransMs := NewEdit(FTabPlay, 540, 45, 60);
 
-  FTransLabel := NewLabel(FTabPlay, 12, 80);
-  FTransition := NewCombo(FTabPlay, 240, 77, 165);
-  FTransMsLabel := NewLabel(FTabPlay, 420, 80);
-  FTransMs := NewEdit(FTabPlay, 540, 77, 60);
-
-  FRulesLabel := NewLabel(FTabPlay, 12, 116);
-  FRules := TCheckListBox.Create(Self);
+  FRules := TRadioGroup.Create(Self);
   FRules.Parent := FTabPlay;
-  FRules.SetBounds(12, 136, 612, 70);
+  FRules.Columns := 2;
+  FRules.SetBounds(12, 80, 612, 118);
 
-  FDefaultLabel := NewLabel(FTabPlay, 12, 224);
-  FDefault := NewCombo(FTabPlay, 240, 221, 250);
+  FToleranceLabel := NewLabel(FTabPlay, 12, 216);
+  FTolerance := NewEdit(FTabPlay, 240, 213, 60);
 
-  FToleranceLabel := NewLabel(FTabPlay, 12, 258);
-  FTolerance := NewEdit(FTabPlay, 240, 255, 60);
-
-  FHomeNameLabel := NewLabel(FTabPlay, 12, 290);
-  FHomeName := NewEdit(FTabPlay, 240, 287, 250);
-  FGeoLabel := NewLabel(FTabPlay, 12, 322);
-  FLat := NewEdit(FTabPlay, 240, 319, 90);
-  FLon := NewEdit(FTabPlay, 336, 319, 90);
-  FRadius := NewEdit(FTabPlay, 432, 319, 58);
-  FAuto := NewCheck(FTabPlay, 500, 289, 128);
+  FHomeNameLabel := NewLabel(FTabPlay, 12, 248);
+  FHomeName := NewEdit(FTabPlay, 240, 245, 250);
+  FGeoLabel := NewLabel(FTabPlay, 12, 280);
+  FLat := NewEdit(FTabPlay, 240, 277, 90);
+  FLon := NewEdit(FTabPlay, 336, 277, 90);
+  FRadius := NewEdit(FTabPlay, 432, 277, 58);
+  FAuto := NewCheck(FTabPlay, 500, 247, 128);
   FAuto.Height := 40;
   FAuto.WordWrap := True;
 end;
@@ -423,8 +412,7 @@ end;
 { (Re)sets all texts for the current language. }
 procedure TSettingsForm.ApplyTexts;
 var
-  i, vModeIdx, vDefaultIdx, vTransIdx, vPosIdx: Integer;
-  vChecked: array of Boolean;
+  i, vRuleIdx, vTransIdx, vPosIdx: Integer;
 begin
   Caption := Trim('MyScreenSaver ' + AppVersion) + L(' — настройки', ' — settings');
   FLangLabel.Caption := 'Язык / Language:';
@@ -465,21 +453,13 @@ begin
 
   // play
   FSecondsLabel.Caption := L('Время показа одного файла, сек:', 'Display time of one file, sec:');
-  FModeLabel.Caption := L('Режим выбора:', 'Selection mode:');
   FTransLabel.Caption := L('Переход между слайдами:', 'Slide transition:');
   FTransMsLabel.Caption := L('Длительность, мс:', 'Duration, ms:');
-  FRulesLabel.Caption := L('Активные правила (для режима "По правилам"):', 'Active rules (for the "By rules" mode):');
-  FDefaultLabel.Caption := L('Правило по умолчанию:', 'Default rule:');
+  FRules.Caption := L('Активное правило', 'Active rule');
   FToleranceLabel.Caption := L('"В этот день": отклонение, дней (±):', '"On this day": tolerance, days (±):');
   FHomeNameLabel.Caption := L('Текущее место (название):', 'Current place (name):');
   FGeoLabel.Caption := L('Широта / долгота / радиус, км:', 'Latitude / longitude / radius, km:');
   FAuto.Caption := L('Определять место по IP', 'Detect place by IP');
-
-  vModeIdx := FMode.ItemIndex;
-  FMode.Items.Clear;
-  FMode.Items.Add(L('Полностью случайный', 'Fully random'));
-  FMode.Items.Add(L('По правилам', 'By rules'));
-  FMode.ItemIndex := vModeIdx;
 
   vTransIdx := FTransition.ItemIndex;
   FTransition.Items.Clear;
@@ -491,20 +471,11 @@ begin
   FTransition.Items.Add(L('Случайный', 'Random'));
   FTransition.ItemIndex := vTransIdx;
 
-  SetLength(vChecked, FRules.Items.Count);
-  for i := 0 to Integer(FRules.Items.Count) - 1 do
-    vChecked[i] := FRules.Checked[i];
-  vDefaultIdx := FDefault.ItemIndex;
+  vRuleIdx := FRules.ItemIndex;
   FRules.Items.Clear;
-  FDefault.Items.Clear;
   for i := 0 to Integer(FRuleNames.Count) - 1 do
-  begin
     FRules.Items.Add(RuleTitle(FRuleNames[i]));
-    FDefault.Items.Add(RuleTitle(FRuleNames[i]));
-  end;
-  for i := 0 to Min(Integer(High(vChecked)), Integer(FRules.Items.Count) - 1) do
-    FRules.Checked[i] := vChecked[i];
-  FDefault.ItemIndex := vDefaultIdx;
+  FRules.ItemIndex := vRuleIdx;
 
   // information
   FInfoHint.Caption := L('Отмеченные поля показываются в окне информации (клавиша I):',
@@ -859,11 +830,10 @@ begin
     FCustom.Add(Settings.CustomTags[i]);
 
   FLang.ItemIndex := Ord(CurrentLanguage);
-  vIdx := FRuleNames.IndexOf(Settings.DefaultRule);
-  if vIdx < 0 then
-    vIdx := 0;
+  vIdx := 0;
+  if Settings.ActiveRules.Count > 0 then
+    vIdx := Max(0, FRuleNames.IndexOf(Settings.ActiveRules[0]));   // 'random' is the first one
   ApplyTexts;
-  FMode.ItemIndex := Ord(Settings.Mode);
   FTransition.ItemIndex := Ord(Settings.Transition);
   FTransMs.Text := IntToStr(Settings.TransitionMs);
   FShowPhotos.Checked := Settings.MediaTypes in [mtPhotos, mtBoth];
@@ -871,9 +841,7 @@ begin
   FSilent.Checked := Settings.SilentVideo;
   FSkipLarge.Checked := Settings.SkipLargeVideos;
   FNoRaw.Checked := Settings.ExcludeRaw;
-  for i := 0 to Integer(FRuleNames.Count) - 1 do
-    FRules.Checked[i] := Settings.ActiveRules.IndexOf(FRuleNames[i]) >= 0;
-  FDefault.ItemIndex := vIdx;
+  FRules.ItemIndex := vIdx;
   FSeconds.Text := IntToStr(Settings.SlideSeconds);
   FTolerance.Text := IntToStr(Settings.DayTolerance);
   FHomeName.Text := Settings.HomeName;
@@ -942,14 +910,10 @@ begin
 
   // play
   Settings.SlideSeconds := Max(1, StrToIntDef(FSeconds.Text, 10));
-  Settings.Mode := TSelectionMode(FMode.ItemIndex);
   Settings.Transition := TTransitionEffect(FTransition.ItemIndex);
   Settings.TransitionMs := Max(100, Min(3000, StrToIntDef(FTransMs.Text, 800)));
   Settings.ActiveRules.Clear;
-  for i := 0 to Integer(FRuleNames.Count) - 1 do
-    if FRules.Checked[i] then
-      Settings.ActiveRules.Add(FRuleNames[i]);
-  Settings.DefaultRule := FRuleNames[FDefault.ItemIndex];
+  Settings.ActiveRules.Add(FRuleNames[Max(0, FRules.ItemIndex)]);
   Settings.DayTolerance := StrToIntDef(FTolerance.Text, 0);
   Settings.HomeName := FHomeName.Text;
   Settings.HomeLat := S2F(FLat.Text, 0);
