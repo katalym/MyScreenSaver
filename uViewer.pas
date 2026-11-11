@@ -420,7 +420,10 @@ begin
   Result := True;
   case AKey of
     VK_ESCAPE:
-      Close;
+      if FInfoShown then
+        HideInfo   // Esc closes the information dialog only
+      else
+        Close;
     VK_SPACE:
       if not ARepeat then
         TogglePause;
