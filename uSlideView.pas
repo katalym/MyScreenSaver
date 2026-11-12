@@ -19,6 +19,8 @@ type
   TSlideView = class(TCustomControl)
   private
     FPicture: TPicture;           // the photo (original size)
+    FOld: TPicture;               // the photo that is being replaced (kept during a transition, see CancelTransition)
+    FFromBlack: Boolean;          // the running transition starts from black: there is no old photo to go back to
     FCurrent: TBitmap;            // the shown photo scaled to the window
     FNext: TBitmap;               // the incoming photo during a transition
     FFrame: TBitmap;              // composed frame
@@ -55,6 +57,13 @@ type
     { Shows nothing (black); a running transition is dropped without OnFadedOut }
     procedure Clear;
     function HasPicture: Boolean;
+    { Finishes a running transition at once: the incoming photo is fully shown (not a fade to black) }
+    procedure Settle;
+    { True while a transition between two photos runs (the new photo is not completely shown yet) }
+    function Fading: Boolean;
+    { Stops a running photo-to-photo transition and goes back to the old photo (True). A transition that starts
+      from black (after a video / the first photo) is finished instead (False). }
+    function CancelTransition: Boolean;
     { Puts the photo (original size) on the clipboard as an image }
     function CopyPictureToClipboard: Boolean;
     function PictureWidth: Integer;
@@ -71,6 +80,7 @@ begin
   inherited Create(AOwner);
   ControlStyle := ControlStyle + [csOpaque];
   FPicture := TPicture.Create;
+  FOld := TPicture.Create;
   FCurrent := TBitmap.Create;
   FNext := TBitmap.Create;
   FFrame := TBitmap.Create;
@@ -88,6 +98,7 @@ begin
   FreeAndNil(FFrame);
   FreeAndNil(FNext);
   FreeAndNil(FCurrent);
+  FreeAndNil(FOld);
   FreeAndNil(FPicture);
   inherited;
 end;
@@ -95,6 +106,39 @@ end;
 procedure TSlideView.WMEraseBkgnd(var Msg: TWMEraseBkgnd);
 begin
   Msg.Result := 1;   // everything is painted in Paint, no flicker
+end;
+
+function TSlideView.Fading: Boolean;
+begin
+  Result := FFading;
+end;
+
+procedure TSlideView.Settle;
+begin
+  if FFading and not FFadingOut then
+    EndFade;
+end;
+
+function TSlideView.CancelTransition: Boolean;
+var
+  vTmp: TPicture;
+begin
+  Result := False;
+  if not FFading or FFadingOut then
+    Exit;
+  if FFromBlack then
+  begin
+    EndFade;
+    Exit;
+  end;
+  FTimer.Enabled := False;
+  FFading := False;
+  vTmp := FPicture;     // the old photo (FCurrent still holds its scaled bitmap) comes back
+  FPicture := FOld;
+  FOld := vTmp;
+  FOld.Assign(nil);
+  Invalidate;
+  Result := True;
 end;
 
 function TSlideView.HasPicture: Boolean;
@@ -188,6 +232,7 @@ begin
   vWasOut := FFadingOut;
   FFading := False;
   FFadingOut := False;
+  FOld.Assign(nil);
   SwapBitmaps;
   if vWasOut then
   begin
@@ -217,9 +262,14 @@ procedure TSlideView.ShowPicture(APicture: TPicture; AEffect: TTransitionEffect;
 var
   vKind: TTransitionEffect;
   vAnimate: Boolean;
+  vOld: TPicture;
 begin
   EndFade;
+  vOld := FOld;
+  FOld := FPicture;     // the replaced photo is kept while the transition runs
+  FPicture := vOld;
   FPicture.Assign(APicture);
+  FFromBlack := False;
   BuildScaled(FNext);
   vKind := AEffect;
   if vKind = teRandom then
@@ -230,6 +280,7 @@ begin
     // the first photo or the one after a video: it appears from black
     BuildBlack(FCurrent);
     FHasCurrent := True;
+    FFromBlack := True;
     vKind := teFade;
   end;
   if vAnimate and FHasCurrent and (FCurrent.Width = FNext.Width) and (FCurrent.Height = FNext.Height) then
@@ -238,6 +289,7 @@ begin
   begin
     SwapBitmaps;
     FHasCurrent := True;
+    FOld.Assign(nil);
   end;
   Invalidate;
 end;
@@ -267,6 +319,7 @@ begin
   FFadingOut := False;
   FHasCurrent := False;
   FPicture.Assign(nil);
+  FOld.Assign(nil);
   Invalidate;
 end;
 
@@ -299,6 +352,7 @@ begin
   if FFading then
   begin
     FFading := False;
+    FOld.Assign(nil);
     if FFadingOut then
     begin
       FFadingOut := False;

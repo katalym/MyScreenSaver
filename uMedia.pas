@@ -28,6 +28,7 @@ type
     Lat: Double;
     Lon: Double;
   end;
+  PMediaMeta = ^TMediaMeta;
 
   TMediaCatalog = class
   private
@@ -123,6 +124,39 @@ function TryGetCachedMeta(const AItem: TMediaItem; out AMeta: TMediaMeta): Boole
 procedure StartLocationDetection;
 procedure CleanCache;
 
+const
+  { Version of the format of catalog.cache (the first line of the file). A file without it, or with another
+    number, is deleted and built again. }
+  CatalogCacheVersion = 4;
+
+var
+  { Called (in the main thread) when the catalog cache was deleted because of its version. }
+  OnCatalogCacheReset: TProc;
+
+type
+  TCacheStatus = record
+    Files: Integer;        // files of the catalog
+    WithMeta: Integer;     // files whose date/GPS are indexed
+    Shown: Integer;        // files that were shown at least once
+    Scanning: Boolean;     // the folders are being scanned
+    FileBytes: Int64;      // size of the cache file
+  end;
+
+{ Cache 2 (shown.cache): how many times each file was shown. }
+function ShownTimes(const ALocation: string): Integer;
+function IsShown(const ALocation: string): Boolean;
+procedure MarkShown(const ALocation: string);   // the counter + 1
+{ The counters are deleted: nothing was shown. }
+procedure ResetShown;
+function ShownCount: Integer;                   // files that were shown at least once
+{ The random order shows the files whose counter is not above this level first (see uRules). }
+function ShownLevel: Integer;
+procedure SetShownLevel(ALevel: Integer);
+{ Deletes both caches and the cached data (file list, date/GPS, places, shown counters).
+  The scan threads must not run. }
+procedure ClearCacheData;
+function GetCacheStatus(ACatalog: TMediaCatalog): TCacheStatus;
+
 implementation
 
 uses
@@ -142,6 +176,11 @@ const
 var
   GMetaLock: TCriticalSection;
   GMetaCache: TDictionary<string, TMediaMeta>;
+  GShownLock: TCriticalSection;
+  GShownFileLock: TCriticalSection;
+  GShown: TDictionary<string, Integer>;
+  GShownLevel: Integer;
+  GShownBloated: Boolean;      // shown.cache has many more lines than files: it is rewritten
 
 function IsRawExt(const AExt: string): Boolean;
 var
@@ -417,8 +456,12 @@ procedure ListHttpDir(const AColl: TMediaCollection; const AUrl: string;
   ADirs, AFiles: TStrings); forward;
 
 { ---- persistent catalog cache (text file, append-only log) ----
-  F<TAB>location<TAB>kind      a media file of a configured collection
-  M<TAB>location<TAB>...       its metadata (date, GPS); a later line overrides an earlier one }
+  Cache 1, catalog.cache. The first line is the header with the version and the summary:
+  Version<TAB>number<TAB>photos=N<TAB>videos=N<TAB>hasdate=N<TAB>hasgps=N
+  the second line has the names of the columns, then follows one record per file (the last line of a file wins):
+  F<TAB>location<TAB>kind<TAB>has-date<TAB>date<TAB>has-GPS<TAB>lat<TAB>lon
+  (the place names are in places.cache, see uLocation)
+  A new file is first written as F<TAB>location<TAB>kind only (not indexed yet); the indexer adds the rest. }
 
 var
   GCacheLock: TCriticalSection;
@@ -428,31 +471,48 @@ begin
   Result := TPath.Combine(ExtractFilePath(TAppSettings.ConfigPath), 'catalog.cache');
 end;
 
-function MetaCacheLine(const ALocation: string; const AMeta: TMediaMeta): string;
+function HeaderLine(APhotos, AVideos, AWithDate, AWithGps: Integer): string;
 begin
-  Result := Format('M'#9'%s'#9'%d'#9'%s'#9'%d'#9'%s'#9'%s',
-    [ALocation, Ord(AMeta.HasDate), FloatToStr(AMeta.Date, TFormatSettings.Invariant),
-     Ord(AMeta.HasGps), FloatToStr(AMeta.Lat, TFormatSettings.Invariant),
-     FloatToStr(AMeta.Lon, TFormatSettings.Invariant)]);
+  Result := Format('Version'#9'%d'#9'photos=%d'#9'videos=%d'#9'hasdate=%d'#9'hasgps=%d',
+    [CatalogCacheVersion, APhotos, AVideos, AWithDate, AWithGps]);
 end;
 
-function FileCacheLine(const AItem: TMediaItem): string;
+{ The second line of the file: the names of the columns of the records. }
+function ColumnsLine: string;
+begin
+  Result := 'Record'#9'File'#9'Kind'#9'HasDate'#9'Date'#9'HasGPS'#9'Lat'#9'Lon';
+end;
+
+{ The record of a file: without AMeta (nil) only the file and its kind. }
+function FileCacheLine(const AItem: TMediaItem; AMeta: PMediaMeta = nil): string;
 begin
   Result := 'F'#9 + AItem.Location + #9 + IfThen(AItem.Kind = mkVideo, '1', '0');
+  if AMeta <> nil then
+    Result := Result + Format(#9'%d'#9'%s'#9'%d'#9'%s'#9'%s',
+      [Ord(AMeta.HasDate), FloatToStr(AMeta.Date, TFormatSettings.Invariant),
+       Ord(AMeta.HasGps), FloatToStr(AMeta.Lat, TFormatSettings.Invariant),
+       FloatToStr(AMeta.Lon, TFormatSettings.Invariant)]);
 end;
 
 procedure AppendCacheLines(ALines: TStrings);
 var
   vWriter: TStreamWriter;
   i: Integer;
+  vNew: Boolean;
 begin
   if ALines.Count = 0 then
     Exit;
   GCacheLock.Enter;
   try
     try
+      vNew := not FileExists(CatalogCachePath);
       vWriter := TStreamWriter.Create(CatalogCachePath, True, TEncoding.UTF8);
       try
+        if vNew then
+        begin
+          vWriter.WriteLine(HeaderLine(0, 0, 0, 0));   // a file always starts with its header
+          vWriter.WriteLine(ColumnsLine);
+        end;
         for i := 0 to ALines.Count - 1 do
           vWriter.WriteLine(ALines[i]);
       finally
@@ -473,19 +533,41 @@ var
   vMeta: TMediaMeta;
   vWriter: TStreamWriter;
   vTmp: string;
+  vPhotos, vVideos, vWithDate, vWithGps: Integer;
 begin
   vItems := ACatalog.Snapshot;
   vTmp := CatalogCachePath + '.tmp';
+  vPhotos := 0;
+  vVideos := 0;
+  vWithDate := 0;
+  vWithGps := 0;
+  for vItem in vItems do
+  begin
+    if vItem.Kind = mkVideo then
+      Inc(vVideos)
+    else
+      Inc(vPhotos);
+    if TryGetCachedMeta(vItem, vMeta) then
+    begin
+      if vMeta.HasDate then
+        Inc(vWithDate);
+      if vMeta.HasGps then
+        Inc(vWithGps);
+    end;
+  end;
   GCacheLock.Enter;
   try
     try
       vWriter := TStreamWriter.Create(vTmp, False, TEncoding.UTF8);
       try
+        vWriter.WriteLine(HeaderLine(vPhotos, vVideos, vWithDate, vWithGps));
+        vWriter.WriteLine(ColumnsLine);
         for vItem in vItems do
         begin
-          vWriter.WriteLine(FileCacheLine(vItem));
           if TryGetCachedMeta(vItem, vMeta) then
-            vWriter.WriteLine(MetaCacheLine(vItem.Location, vMeta));
+            vWriter.WriteLine(FileCacheLine(vItem, @vMeta))
+          else
+            vWriter.WriteLine(FileCacheLine(vItem));
         end;
       finally
         vWriter.Free;
@@ -523,10 +605,12 @@ var
   vMeta: TMediaMeta;
   vKind: TMediaKind;
   i, vCollIdx, vFileLines, vSkipped: Integer;
+  vBadVersion: Boolean;
 begin
   Result := False;
   vFileLines := 0;
   vSkipped := 0;
+  vBadVersion := False;
   if not FileExists(CatalogCachePath) then
     Exit;
   vColls := Settings.Collections.ToArray;
@@ -535,7 +619,14 @@ begin
     try
       vReader := TStreamReader.Create(CatalogCachePath, TEncoding.UTF8);
       try
-        while not vReader.EndOfStream do
+        // the first line is the header: a file without it, or of another version, is not read
+        if vReader.EndOfStream then
+          vLine := ''
+        else
+          vLine := vReader.ReadLine;
+        vParts := vLine.Split([#9]);
+        vBadVersion := not ((Length(vParts) >= 2) and (vParts[0] = 'Version') and (vParts[1] = IntToStr(CatalogCacheVersion)));
+        while not vBadVersion and not vReader.EndOfStream do
         begin
           vLine := vReader.ReadLine;
           vParts := vLine.Split([#9]);
@@ -567,22 +658,42 @@ begin
             else
               vKind := mkPhoto;
             vItems.Add(MakeItem(vColls[vCollIdx], vParts[1], vKind));
-          end
-          else if (vParts[0] = 'M') and (Length(vParts) >= 7) then
-          begin
-            vMeta := Default(TMediaMeta);
-            vMeta.HasDate := vParts[2] = '1';
-            vMeta.Date := StrToFloatDef(vParts[3], 0, TFormatSettings.Invariant);
-            vMeta.HasGps := vParts[4] = '1';
-            vMeta.Lat := StrToFloatDef(vParts[5], 0, TFormatSettings.Invariant);
-            vMeta.Lon := StrToFloatDef(vParts[6], 0, TFormatSettings.Invariant);
-            PutMetaCache(vParts[1], vMeta);
+            if Length(vParts) >= 8 then
+            begin
+              vMeta := Default(TMediaMeta);
+              vMeta.HasDate := vParts[3] = '1';
+              vMeta.Date := StrToFloatDef(vParts[4], 0, TFormatSettings.Invariant);
+              vMeta.HasGps := vParts[5] = '1';
+              vMeta.Lat := StrToFloatDef(vParts[6], 0, TFormatSettings.Invariant);
+              vMeta.Lon := StrToFloatDef(vParts[7], 0, TFormatSettings.Invariant);
+              PutMetaCache(vParts[1], vMeta);
+            end;
           end;
         end;
       finally
         vReader.Free;
       end;
     except
+    end;
+    if vBadVersion then
+    begin
+      // the old cache is deleted, the scan builds a new one; the user is told in the main thread
+      GCacheLock.Enter;
+      try
+        try
+          TFile.Delete(CatalogCachePath);
+        except
+        end;
+      finally
+        GCacheLock.Leave;
+      end;
+      TThread.Queue(nil,
+        procedure
+        begin
+          if Assigned(OnCatalogCacheReset) then
+            OnCatalogCacheReset();
+        end);
+      Exit(True);
     end;
     ACatalog.AddRange(vItems);
     if ACatalog.Count > 0 then
@@ -591,6 +702,256 @@ begin
     Result := (vSkipped > 0) or (vFileLines > ACatalog.Count + ACatalog.Count div 4);
   finally
     vItems.Free;
+  end;
+end;
+
+{ ---- cache 2: how many times a file was shown (shown.cache: file TAB count, the last line of a file wins) ---- }
+
+function ShownCachePath: string;
+begin
+  Result := TPath.Combine(ExtractFilePath(TAppSettings.ConfigPath), 'shown.cache');
+end;
+
+function ShownTimes(const ALocation: string): Integer;
+begin
+  GShownLock.Enter;
+  try
+    if not GShown.TryGetValue(ALocation, Result) then
+      Result := 0;
+  finally
+    GShownLock.Leave;
+  end;
+end;
+
+function IsShown(const ALocation: string): Boolean;
+begin
+  Result := ShownTimes(ALocation) > 0;
+end;
+
+function ShownCount: Integer;
+begin
+  GShownLock.Enter;
+  try
+    Result := GShown.Count;
+  finally
+    GShownLock.Leave;
+  end;
+end;
+
+function ShownLevel: Integer;
+begin
+  Result := GShownLevel;
+end;
+
+procedure SetShownLevel(ALevel: Integer);
+begin
+  GShownLevel := ALevel;
+end;
+
+procedure AppendShownLine(const ALine: string);
+var
+  vWriter: TStreamWriter;
+begin
+  GShownFileLock.Enter;
+  try
+    try
+      vWriter := TStreamWriter.Create(ShownCachePath, True, TEncoding.UTF8);
+      try
+        vWriter.WriteLine(ALine);
+      finally
+        vWriter.Free;
+      end;
+    except
+    end;
+  finally
+    GShownFileLock.Leave;
+  end;
+end;
+
+procedure MarkShown(const ALocation: string);
+var
+  vCount: Integer;
+begin
+  GShownLock.Enter;
+  try
+    if not GShown.TryGetValue(ALocation, vCount) then
+      vCount := 0;
+    Inc(vCount);
+    GShown.AddOrSetValue(ALocation, vCount);
+  finally
+    GShownLock.Leave;
+  end;
+  AppendShownLine(ALocation + #9 + IntToStr(vCount));
+end;
+
+{ Nothing counts as shown any more: the counters are deleted. }
+procedure ResetShown;
+begin
+  GShownLock.Enter;
+  try
+    GShown.Clear;
+  finally
+    GShownLock.Leave;
+  end;
+  GShownLevel := 0;
+  GShownFileLock.Enter;
+  try
+    try
+      if FileExists(ShownCachePath) then
+        TFile.Delete(ShownCachePath);
+    except
+    end;
+  finally
+    GShownFileLock.Leave;
+  end;
+end;
+
+procedure ClearCacheData;
+begin
+  ResetShown;
+  GMetaLock.Enter;
+  try
+    GMetaCache.Clear;
+  finally
+    GMetaLock.Leave;
+  end;
+  GCacheLock.Enter;
+  try
+    try
+      if FileExists(CatalogCachePath) then
+        TFile.Delete(CatalogCachePath);
+    except
+    end;
+  finally
+    GCacheLock.Leave;
+  end;
+end;
+
+{ Reads shown.cache. }
+procedure LoadShownCache;
+var
+  vParts: TArray<string>;
+  vLine: string;
+  vLines, vCount: Integer;
+begin
+  vLines := 0;
+  GShownBloated := False;
+  if not FileExists(ShownCachePath) then
+    Exit;
+  try
+    for vLine in TFile.ReadAllLines(ShownCachePath, TEncoding.UTF8) do
+    begin
+      vParts := vLine.Split([#9]);
+      if Length(vParts) < 2 then
+        Continue;
+      Inc(vLines);
+      vCount := StrToIntDef(vParts[1], 0);
+      GShownLock.Enter;
+      try
+        if vCount > 0 then
+          GShown.AddOrSetValue(vParts[0], vCount);
+      finally
+        GShownLock.Leave;
+      end;
+    end;
+  except
+  end;
+  GShownBloated := vLines > ShownCount + ShownCount div 4 + 100;
+end;
+
+{ The register of an older version (shown.log) becomes counters of 1. }
+procedure ImportLegacyShown;
+var
+  vPath, vLine: string;
+begin
+  vPath := TPath.Combine(ExtractFilePath(TAppSettings.ConfigPath), 'shown.log');
+  if not FileExists(vPath) then
+    Exit;
+  try
+    for vLine in TFile.ReadAllLines(vPath, TEncoding.UTF8) do
+      if (vLine <> '') and not IsShown(vLine) then
+        MarkShown(vLine);
+    TFile.Delete(vPath);
+  except
+  end;
+end;
+
+{ Rewrites shown.cache with one line per file of the catalog (counters of files that are gone are dropped). }
+procedure CompactShownCache(ACatalog: TMediaCatalog);
+var
+  vItem: TMediaItem;
+  vCount: Integer;
+  vNew: TDictionary<string, Integer>;
+  vPair: TPair<string, Integer>;
+  vWriter: TStreamWriter;
+  vTmp: string;
+begin
+  vNew := TDictionary<string, Integer>.Create(TIStringComparer.Ordinal);
+  try
+    for vItem in ACatalog.Snapshot do
+    begin
+      vCount := ShownTimes(vItem.Location);
+      if vCount > 0 then
+        vNew.AddOrSetValue(vItem.Location, vCount);
+    end;
+    vTmp := ShownCachePath + '.tmp';
+    GShownFileLock.Enter;
+    try
+      try
+        if vNew.Count = 0 then
+        begin
+          if FileExists(ShownCachePath) then
+            TFile.Delete(ShownCachePath);
+        end
+        else
+        begin
+          vWriter := TStreamWriter.Create(vTmp, False, TEncoding.UTF8);
+          try
+            for vPair in vNew do
+              vWriter.WriteLine(vPair.Key + #9 + IntToStr(vPair.Value));
+          finally
+            vWriter.Free;
+          end;
+          TFile.Copy(vTmp, ShownCachePath, True);
+          TFile.Delete(vTmp);
+        end;
+      except
+      end;
+    finally
+      GShownFileLock.Leave;
+    end;
+    GShownLock.Enter;
+    try
+      GShown.Clear;
+      for vPair in vNew do
+        GShown.Add(vPair.Key, vPair.Value);
+    finally
+      GShownLock.Leave;
+    end;
+  finally
+    vNew.Free;
+  end;
+end;
+
+function GetCacheStatus(ACatalog: TMediaCatalog): TCacheStatus;
+begin
+  Result := Default(TCacheStatus);
+  Result.Files := ACatalog.Count;
+  Result.Scanning := ACatalog.Scanning;
+  Result.Shown := ShownCount;
+  if GMetaCache <> nil then
+  begin
+    GMetaLock.Enter;
+    try
+      Result.WithMeta := GMetaCache.Count;
+    finally
+      GMetaLock.Leave;
+    end;
+  end;
+  try
+    if FileExists(CatalogCachePath) then
+      Result.FileBytes := TFile.GetSize(CatalogCachePath);
+  except
   end;
 end;
 
@@ -1002,7 +1363,7 @@ procedure TScanThread.Execute;
 var
   vColl: TMediaCollection;
   vList: TArray<TMediaCollection>;
-  vCompact: Boolean;
+  vRemoved: Integer;
 begin
   FCatalog.Scanning := True;
   try
@@ -1011,7 +1372,9 @@ begin
     FReachable := TDictionary<string, Boolean>.Create(TIStringComparer.Ordinal);
     FPending := TStringList.Create;
     // 1. the previous scan result is usable at once
-    vCompact := LoadCatalogCache(FCatalog);
+    LoadShownCache;
+    LoadCatalogCache(FCatalog);
+    ImportLegacyShown;
     // 2. refresh in the background: add new files, forget the removed ones
     vList := Settings.Collections.ToArray;
     for vColl in vList do
@@ -1036,8 +1399,12 @@ begin
     end;
     FlushPending;
     if not Terminated then
-      if (FCatalog.RetainOnly(FSeen, FReachable) > 0) or vCompact then
-        RewriteCatalogCache(FCatalog);
+    begin
+      vRemoved := FCatalog.RetainOnly(FSeen, FReachable);
+      RewriteCatalogCache(FCatalog);   // one line per file and the header with the summary
+      if (vRemoved > 0) or GShownBloated then
+        CompactShownCache(FCatalog);
+    end;
   except
     // a failing scan must not crash the application
    end;
@@ -1248,8 +1615,10 @@ var
   vMeta: TMediaMeta;
   vBatch: TArray<TMediaItem>;
   vLines: TStringList;
+  vIndexed: Boolean;
 begin
   vLines := TStringList.Create;
+  vIndexed := False;
   try
     SetLength(vBatch, BatchSize);
     i := 0;
@@ -1278,8 +1647,9 @@ begin
         vLines.Clear;
         for k := 0 to vCount - 1 do
           if TryGetCachedMeta(vBatch[k], vMeta) then
-            vLines.Add(MetaCacheLine(vBatch[k].Location, vMeta));
+            vLines.Add(FileCacheLine(vBatch[k], @vMeta));
         AppendCacheLines(vLines);
+        vIndexed := True;
       end
       else if i >= FCatalog.Count then
       begin
@@ -1289,6 +1659,9 @@ begin
           Break;
       end;
     end;
+    // everything is indexed: the header of the cache gets the new summary
+    if vIndexed and not Terminated then
+      RewriteCatalogCache(FCatalog);
   finally
     vLines.Free;
   end;
@@ -1298,8 +1671,14 @@ initialization
   GMetaLock := TCriticalSection.Create;
   GCacheLock := TCriticalSection.Create;
   GMetaCache := TDictionary<string, TMediaMeta>.Create;
+  GShownLock := TCriticalSection.Create;
+  GShown := TDictionary<string, Integer>.Create(TIStringComparer.Ordinal);
+  GShownFileLock := TCriticalSection.Create;
 
 finalization
+  FreeAndNil(GShown);
+  FreeAndNil(GShownFileLock);
+  FreeAndNil(GShownLock);
   FreeAndNil(GCacheLock);
   FreeAndNil(GMetaCache);
   FreeAndNil(GMetaLock);

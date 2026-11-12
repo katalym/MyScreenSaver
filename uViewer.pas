@@ -6,7 +6,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Generics.Collections,
-  Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
+  Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Buttons, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
   WMPLib, uConfig, uMedia, uSlideView, uOverlay, uShareDialog;
 
 type
@@ -38,17 +38,28 @@ type
     FDeleteBtn: TButton;     // deletes the file
     FCloseBtn: TButton;      // closes the information dialog
     FInfoText: TMemo;        // read-only: text can be selected and copied
+    FCacheLabel: TLabel;     // state of the cache, below the text and above the buttons
+    FOpenCacheBtn: TSpeedButton;   // the buttons at the right end of the cache line (speed buttons: no tab stop)
+    FClearShownBtn: TSpeedButton;
+    FClearAllBtn: TSpeedButton;
     FTimer: TTimer;
+    FNoticeTimer: TTimer;    // shows the "cache was cleared" message when the window is ready
     FPaused: Boolean;
     FInfoShown: Boolean;
     FBusy: Boolean;
     FFailures: Integer;
     FCurrentPath: string;
     FCurrentItem: TMediaItem;
+    FPrevItem: TMediaItem;       // the file shown before FCurrentItem (the photo that is fading out)
+    FPrevPath: string;
+    FCurrentMarked: Boolean;     // its counter in shown.cache was already increased
+    FCurrentShown: Boolean;      // the current file was shown completely (a video: it is visible)
     FHasCurrent: Boolean;
     FStartPt: TPoint;
     FBlankForms: TList<TForm>;
     procedure StartScan;
+    procedure CacheResetNotice;
+    procedure NoticeTimerTick(Sender: TObject);
     procedure StopScan;
     procedure AppMessage(var Msg: TMsg; var Handled: Boolean);
     function HandleKey(AKey: Word; ARepeat: Boolean): Boolean;
@@ -58,13 +69,17 @@ type
     function BuildFieldText(AOverlay: Boolean): string;
     function OverlayConfigured: Boolean;
     procedure UpdateOverlay;
-    procedure StartPlaceLookup(ALat, ALon: Double; const AItemLocation: string);
+    procedure StartPlaceLookup(ALat, ALon: Double; const AItem: TMediaItem);
+    function CachedPlace(const AItem: TMediaItem; ALat, ALon: Double; out APlace: string): Boolean;
     procedure WMMove(var Msg: TWMMove); message WM_MOVE;
     procedure FitVideo;
     procedure PlayerError(Sender: TObject);
     procedure GoNext;
     procedure GoPrev;
     procedure ShowCurrent;
+    procedure CommitCurrent(const AItem: TMediaItem; const APath: string);
+    procedure BackToPrevious;
+    procedure MarkCurrentShown;
     procedure ShowPhoto(const APath: string; const AItem: TMediaItem);
     procedure ShowVideo(const APath: string);
     procedure StartVideo(const APath: string);
@@ -82,6 +97,11 @@ type
     procedure InfoDblClick(Sender: TObject);
     function BuildInfo: string;
     procedure CreateInfoButtons;
+    function CacheStateText: string;
+    function NewCacheButton(AOnClick: TNotifyEvent): TSpeedButton;
+    procedure OpenCacheClick(Sender: TObject);
+    procedure ClearShownClick(Sender: TObject);
+    procedure ClearAllClick(Sender: TObject);
     procedure ShareButtonClick(Sender: TObject);
     procedure DeleteButtonClick(Sender: TObject);
     procedure CloseButtonClick(Sender: TObject);
@@ -256,19 +276,35 @@ begin
   FInfoText.Cursor := crIBeam;
   FInfoText.WordWrap := True;
   FInfoText.OnDblClick := InfoDblClick;
+  FCacheLabel := TLabel.Create(Self);
+  FCacheLabel.Parent := FInfoInner;
+  FCacheLabel.Font.Name := 'Segoe UI';
+  FCacheLabel.Font.Size := 9;
+  FCacheLabel.Font.Color := clSilver;
+  FCacheLabel.AutoSize := False;
+  FCacheLabel.Transparent := True;
+  FOpenCacheBtn := NewCacheButton(OpenCacheClick);
+  FClearShownBtn := NewCacheButton(ClearShownClick);
+  FClearAllBtn := NewCacheButton(ClearAllClick);
   CreateInfoButtons;
 
   FTimer := TTimer.Create(Self);
   FTimer.Enabled := False;
   FTimer.OnTimer := TimerTick;
+  FNoticeTimer := TTimer.Create(Self);
+  FNoticeTimer.Enabled := False;
+  FNoticeTimer.Interval := 500;
+  FNoticeTimer.OnTimer := NoticeTimerTick;
 
   Application.OnMessage := AppMessage;
+  OnCatalogCacheReset := CacheResetNotice;
   StartScan;
 end;
 
 destructor TViewerForm.Destroy;
 begin
   GViewer := nil;
+  OnCatalogCacheReset := nil;
   FreeAndNil(FOverlay);
   Application.OnMessage := nil;
   // stop the background threads before the unit finalization frees their shared data
@@ -334,6 +370,31 @@ begin
   FQuick := TQuickSampler.Create(FCatalog);
   FIndexer := TMetaIndexer.Create(FCatalog);
   StartLocationDetection;
+end;
+
+{ The cache had no version or another one: it was deleted and is built again. The message box is centered
+  over the viewer window (the whole screen). }
+procedure TViewerForm.CacheResetNotice;
+begin
+  // not at once: the scan thread reports it while the window may still be under construction
+  FNoticeTimer.Enabled := True;
+end;
+
+procedure TViewerForm.NoticeTimerTick(Sender: TObject);
+begin
+  if not Showing or FBusy then
+    Exit;   // try again later
+  FNoticeTimer.Enabled := False;
+  FBusy := True;
+  try
+    Application.MessageBox(PChar(L('Формат кэша каталога изменился (нет номера версии или другая версия).' + #13#10 +
+      'Кэш очищен и будет создан заново: папки сканируются снова, это может занять время.',
+      'The format of the catalog cache has changed (no version number or another version).' + #13#10 +
+      'The cache was cleared and is being rebuilt: the folders are scanned again, this may take a while.')),
+      PChar(L('Кэш', 'Cache')), MB_OK or MB_ICONINFORMATION);
+  finally
+    FBusy := False;
+  end;
 end;
 
 procedure TViewerForm.StopScan;
@@ -474,10 +535,22 @@ begin
   FTimer.Enabled := True;
 end;
 
+{ The file on the screen goes to the register of the shown files when it was shown completely (the photo is
+  not fading in any more, the video is visible) and the slideshow switches to another file. }
+procedure TViewerForm.MarkCurrentShown;
+begin
+  if FHasCurrent and FCurrentShown and not FCurrentMarked and (FPendingVideo = '') and not FView.Fading then
+  begin
+    MarkShown(FCurrentItem.Location);
+    FCurrentMarked := True;
+  end;
+end;
+
 procedure TViewerForm.GoNext;
 var
   vItem: TMediaItem;
 begin
+  MarkCurrentShown;
   HideInfo;
   FPaused := False;
   SetPauseBar(False);
@@ -511,6 +584,7 @@ procedure TViewerForm.GoPrev;
 begin
   if FHistPos <= 0 then
     Exit;
+  MarkCurrentShown;
   HideInfo;
   FPaused := False;
   SetPauseBar(False);
@@ -572,8 +646,6 @@ begin
   FPendingVideo := '';
   FWaitingOpen := False;
   vItem := FHistory[FHistPos];
-  FCurrentItem := vItem;
-  FHasCurrent := True;
   FTimer.Enabled := False;
   FPlayer.controls.stop;
   Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crHourGlass));
@@ -583,7 +655,6 @@ begin
     if FMode = vmStandalone then
       Screen.Cursor := crDefault;
   end;
-  FCurrentPath := vPath;
   if (vPath = '') or not FileExists(vPath) then
   begin
     Inc(FFailures);
@@ -597,7 +668,10 @@ begin
     if vItem.Kind = mkPhoto then
       ShowPhoto(vPath, vItem)
     else
+    begin
+      CommitCurrent(vItem, vPath);
       ShowVideo(vPath);
+    end;
     FFailures := 0;
   except
     Inc(FFailures);
@@ -606,6 +680,43 @@ begin
     FTimer.Interval := Cardinal(IfThen(FFailures > MaxFailures, 3000, 10));
     FTimer.Enabled := True;
   end;
+end;
+
+{ FCurrentItem / FCurrentPath always describe what is on the screen (the information dialog, the share
+  and delete actions and the overlay use them): they are set only when the file is really being shown. }
+procedure TViewerForm.CommitCurrent(const AItem: TMediaItem; const APath: string);
+begin
+  FPrevItem := FCurrentItem;
+  FPrevPath := FCurrentPath;
+  FCurrentItem := AItem;
+  FCurrentPath := APath;
+  FHasCurrent := True;
+  FCurrentMarked := False;
+  FCurrentShown := AItem.Kind = mkPhoto;   // a video counts when it becomes visible (StartVideo / CheckVideoSize)
+end;
+
+{ The running transition was cancelled: the old photo is on the screen again. It is the current file, and the
+  history position goes back to it, so the cancelled one is shown again when the slideshow goes on. }
+procedure TViewerForm.BackToPrevious;
+var
+  d: Integer;
+
+  function Found(AIdx: Integer): Boolean;
+  begin
+    Result := (AIdx >= 0) and (AIdx < Integer(FHistory.Count)) and
+      SameText(FHistory[AIdx].Location, FCurrentItem.Location);
+    if Result then
+      FHistPos := AIdx;
+  end;
+
+begin
+  FCurrentItem := FPrevItem;
+  FCurrentPath := FPrevPath;
+  FCurrentShown := True;
+  FCurrentMarked := True;   // it was counted when the slideshow left it
+  for d := 0 to Integer(FHistory.Count) do
+    if Found(FHistPos - d) or Found(FHistPos + d) then
+      Exit;
 end;
 
 procedure TViewerForm.ShowPhoto(const APath: string; const AItem: TMediaItem);
@@ -633,6 +744,7 @@ begin
     LoadOrientedPicture(vPic, APath, vOrient);
     FVideoHost.Visible := False;
     FView.Visible := True;
+    CommitCurrent(AItem, APath);
     FView.ShowPicture(vPic, vEffect, vMs, vDir);
   finally
     vPic.Free;
@@ -681,6 +793,7 @@ begin
   // With the size check the video starts hidden and muted; its size is known only when it plays
   // (see CheckVideoSize): a too large video is stopped and skipped, the others become visible.
   FWaitingOpen := Settings.SkipLargeVideos;
+  FCurrentShown := not FWaitingOpen;
   FPlayer.Visible := not FWaitingOpen;
   FPlayer.settings.mute := FWaitingOpen or Settings.SilentVideo;
   FPlayer.settings.autoStart := True;
@@ -758,6 +871,7 @@ begin
     end;
   end;
   FSkips := 0;
+  FCurrentShown := True;
   FPlayer.settings.mute := Settings.SilentVideo;
   FPlayer.Visible := True;
   FitVideo;
@@ -831,6 +945,13 @@ begin
   end;
   if not FHasCurrent then
     Exit;
+  // a video that is not visible yet (fading in from the previous photo / size check) is not "on the screen"
+  if (FPendingVideo <> '') or FWaitingOpen then
+    Exit;
+  // a photo that is still fading in is not on the screen yet: the transition is cancelled, the information
+  // is shown for the photo that is fading out (a transition from black is finished instead)
+  if FView.CancelTransition then
+    BackToPrevious;
   FInfoShown := True;
   if FOverlay <> nil then
     FOverlay.HideOverlay;
@@ -888,7 +1009,7 @@ const
   BtnH = 25;   // the default height of the buttons
 var
   vSl: TStringList;
-  vMaxW, vCap, vHeight, vLineH, i, vBtnW, vDelW, vCloseW, vContentW, vY: Integer;
+  vMaxW, vCap, vHeight, vLineH, i, vBtnW, vDelW, vCloseW, vContentW, vY, vCacheW, vOpenW, vShownW, vAllW, vBtnGap: Integer;
   vRect: TRect;
 begin
   FInfoText.Font.Name := Settings.InfoFontName;   // configurable
@@ -930,13 +1051,28 @@ begin
   vBtnW := Canvas.TextWidth(FShareBtn.Caption) + 44;
   vDelW := Canvas.TextWidth(FDeleteBtn.Caption) + 44;
   vCloseW := Canvas.TextWidth(FCloseBtn.Caption) + 44;
-  vContentW := Max(vMaxW, vBtnW + 2 * vDelW + vCloseW + 48);
+  FCacheLabel.Caption := CacheStateText;
+  FOpenCacheBtn.Caption := L('Открыть кэш', 'Open Cache');
+  FClearShownBtn.Caption := L('Сбросить показанные', 'Clear shown');
+  FClearAllBtn.Caption := L('Очистить всё', 'Clear all');
+  Canvas.Font.Assign(FCacheLabel.Font);
+  vCacheW := Canvas.TextWidth(FCacheLabel.Caption);
+  vBtnGap := 4;
+  vOpenW := Canvas.TextWidth(FOpenCacheBtn.Caption) + 20;
+  vShownW := Canvas.TextWidth(FClearShownBtn.Caption) + 20;
+  vAllW := Canvas.TextWidth(FClearAllBtn.Caption) + 20;
+  vContentW := Max(Max(vMaxW, vBtnW + 2 * vDelW + vCloseW + 48),
+    vCacheW + 24 + vOpenW + vShownW + vAllW + 2 * vBtnGap);
 
   FInfoText.Text := AText.TrimRight;
   FInfoText.SetBounds(Pad, Pad, vContentW, vHeight + 4);
   FInfoText.HandleNeeded;
   FInfoText.Perform(EM_SETMARGINS, EC_LEFTMARGIN or EC_RIGHTMARGIN, 0);
-  vY := Pad + vHeight + 4 + 20;
+  FCacheLabel.SetBounds(Pad, Pad + vHeight + 4 + 12, vCacheW + 4, Canvas.TextHeight('Wg') + 2);
+  FClearAllBtn.SetBounds(Pad + vContentW - vAllW, FCacheLabel.Top - 3, vAllW, FCacheLabel.Height + 6);
+  FClearShownBtn.SetBounds(FClearAllBtn.Left - vBtnGap - vShownW, FClearAllBtn.Top, vShownW, FClearAllBtn.Height);
+  FOpenCacheBtn.SetBounds(FClearShownBtn.Left - vBtnGap - vOpenW, FClearAllBtn.Top, vOpenW, FClearAllBtn.Height);
+  vY := FCacheLabel.Top + FCacheLabel.Height + 14;
   FShareBtn.SetBounds(Pad, vY, vBtnW, BtnH);
   FDeleteBtn.SetBounds(Pad + vBtnW + vDelW, vY, vDelW, BtnH);   // a gap of its own width after Share
   FCloseBtn.SetBounds(Pad + vContentW - vCloseW, vY, vCloseW, BtnH);   // Close: the right edge
@@ -1089,18 +1225,21 @@ begin
             begin
               // the overlay never waits for the internet: the name is taken from the cache, or it is
               // requested in the background and the overlay is updated when it has arrived
-              if TryGetCachedGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage), vPlace) then
+              if CachedPlace(FCurrentItem, vExif.Lat, vExif.Lon, vPlace) then
                 AddExif('place', vPlace)
               else
-                StartPlaceLookup(vExif.Lat, vExif.Lon, FCurrentItem.Location);
+                StartPlaceLookup(vExif.Lat, vExif.Lon, FCurrentItem);
             end
             else
             begin
-              Screen.Cursor := crHourGlass;
-              try
-                vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
-              finally
-                Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
+              if not CachedPlace(FCurrentItem, vExif.Lat, vExif.Lon, vPlace) then
+              begin
+                Screen.Cursor := crHourGlass;
+                try
+                  vPlace := ReverseGeocode(vExif.Lat, vExif.Lon, LanguageCode(CurrentLanguage));
+                finally
+                  Screen.Cursor := TCursor(IfThen(FMode = vmScreenSaver, crNone, crDefault));
+                end;
               end;
               if vPlace = '' then
                 vPlace := L('(не удалось определить — нет интернета?)', '(could not be determined — no internet?)');
@@ -1199,19 +1338,27 @@ begin
 end;
 
 { The place name for the overlay is requested in the background; the overlay is updated when it arrives. }
-procedure TViewerForm.StartPlaceLookup(ALat, ALon: Double; const AItemLocation: string);
+{ The place name from the places cache (places.cache, loaded in memory). No internet access. }
+function TViewerForm.CachedPlace(const AItem: TMediaItem; ALat, ALon: Double; out APlace: string): Boolean;
+begin
+  Result := TryGetCachedGeocode(ALat, ALon, LanguageCode(CurrentLanguage), APlace);
+end;
+
+procedure TViewerForm.StartPlaceLookup(ALat, ALon: Double; const AItem: TMediaItem);
 var
   vLang: string;
 begin
   vLang := LanguageCode(CurrentLanguage);
   TThread.CreateAnonymousThread(
     procedure
+    var
+      vPlace: string;
     begin
-      ReverseGeocode(ALat, ALon, vLang);   // fills the cache
+      vPlace := ReverseGeocode(ALat, ALon, vLang);   // fills the cache
       TThread.Queue(nil,
         procedure
         begin
-          if (GViewer <> nil) and GViewer.FHasCurrent and (GViewer.FCurrentItem.Location = AItemLocation) then
+          if (GViewer <> nil) and GViewer.FHasCurrent and (GViewer.FCurrentItem.Location = AItem.Location) then
             GViewer.UpdateOverlay;
         end);
     end).Start;
@@ -1222,6 +1369,61 @@ begin
   inherited;
   if FOverlay <> nil then
     FOverlay.Refit;
+end;
+
+{ One line: the catalog cache (files, indexed date/GPS, shown register, file size, scan state). }
+function TViewerForm.CacheStateText: string;
+var
+  vSt: TCacheStatus;
+begin
+  vSt := GetCacheStatus(FCatalog);
+  Result := Format(L('Кэш: файлов %.0n, метаданные %.0n, показано %.0n, %.1f МБ, %s',
+    'Cache: %.0n files, metadata %.0n, shown %.0n, %.1f MB, %s'),
+    [vSt.Files * 1.0, vSt.WithMeta * 1.0, vSt.Shown * 1.0, vSt.FileBytes / (1024 * 1024),
+     IfThen(vSt.Scanning, L('идёт обновление', 'updating'), L('актуален', 'up to date'))]);
+end;
+
+{ A flat speed button: it is not a window, so it never takes the focus and has no tab stop. }
+function TViewerForm.NewCacheButton(AOnClick: TNotifyEvent): TSpeedButton;
+begin
+  Result := TSpeedButton.Create(Self);
+  Result.Parent := FInfoInner;
+  Result.Flat := True;
+  Result.Font.Name := 'Segoe UI';
+  Result.Font.Size := 9;
+  Result.Font.Color := $F0B060;
+  Result.OnClick := AOnClick;
+end;
+
+{ Opens the folder with the cache files in Explorer. }
+procedure TViewerForm.OpenCacheClick(Sender: TObject);
+begin
+  ShellExecute(0, 'open', PChar(ExtractFilePath(TAppSettings.ConfigPath)), nil, nil, SW_SHOWNORMAL);
+end;
+
+{ A new round of the random order: no file counts as shown. }
+procedure TViewerForm.ClearShownClick(Sender: TObject);
+begin
+  ResetShown;
+  FCacheLabel.Caption := CacheStateText;
+end;
+
+{ Deletes the whole cache (file list, date/GPS, shown register) and scans the folders again. }
+procedure TViewerForm.ClearAllClick(Sender: TObject);
+begin
+  FBusy := True;
+  try
+    if Application.MessageBox(PChar(L('Очистить весь кэш (список файлов, дата и GPS, показанные) и просканировать ' +
+      'папки заново?', 'Clear the whole cache (file list, date and GPS, shown files) and scan the folders again?')),
+      PChar(L('Кэш', 'Cache')), MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON2) <> IDYES then
+      Exit;
+  finally
+    FBusy := False;
+  end;
+  StopScan;
+  ClearCacheData;
+  StartScan;
+  FCacheLabel.Caption := CacheStateText;
 end;
 
 procedure TViewerForm.CreateInfoButtons;

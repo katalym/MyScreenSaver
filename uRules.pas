@@ -6,7 +6,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Generics.Collections, uConfig, uMedia;
+  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults, uConfig, uMedia;
 
 type
   TMediaRule = class abstract
@@ -279,9 +279,9 @@ end;
 
 { picker }
 
-function TryRule(ACatalog: TMediaCatalog; ARule: TMediaRule; out AItem: TMediaItem): Boolean;
+function TryPick(ACatalog: TMediaCatalog; ARule: TMediaRule; AAllowShown: Boolean; out AItem: TMediaItem): Boolean;
 const
-  MaxTries = 30000;
+  MaxTries = 3000;
 var
   vCount, i, vStart: Integer;
   vItem: TMediaItem;
@@ -290,6 +290,8 @@ var
   function Accept: Boolean;
   begin
     Result := False;
+    if not AAllowShown and (ShownTimes(vItem.Location) > ShownLevel) then
+      Exit;
     if not ItemAllowed(vItem) then
       Exit;
     if ARule.NeedsMeta then
@@ -334,7 +336,50 @@ begin
   end;
 end;
 
-function PickMedia(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
+{ The smallest number of times any allowed file was shown; -1 if there is no allowed file. }
+function MinShownTimes(ACatalog: TMediaCatalog): Integer;
+var
+  i, vTimes: Integer;
+  vItem: TMediaItem;
+begin
+  Result := -1;
+  for i := 0 to ACatalog.Count - 1 do
+  begin
+    vItem := ACatalog.Get(i);
+    if not ItemAllowed(vItem) then
+      Continue;
+    vTimes := ShownTimes(vItem.Location);
+    if (Result < 0) or (vTimes < Result) then
+      Result := vTimes;
+    if Result = 0 then
+      Break;
+  end;
+end;
+
+{ Files are shown evenly: first those that were shown the fewest times (the "level"), and only when all
+  of them were shown once more the level goes up. The other rules ("on this day", "near the place") show
+  their matches again (the already shown ones) and only fall back to random when they have no match at all. }
+function TryRule(ACatalog: TMediaCatalog; ARule: TMediaRule; out AItem: TMediaItem): Boolean;
+var
+  vMin: Integer;
+begin
+  Result := TryPick(ACatalog, ARule, False, AItem);
+  if Result then
+    Exit;
+  if ARule is TRandomRule then
+  begin
+    vMin := MinShownTimes(ACatalog);
+    if vMin > ShownLevel then
+    begin
+      SetShownLevel(vMin);
+      Result := TryPick(ACatalog, ARule, False, AItem);
+    end;
+  end
+  else
+    Result := TryPick(ACatalog, ARule, True, AItem);
+end;
+
+function PickCore(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
 var
   vName: string;
 begin
@@ -355,6 +400,11 @@ begin
       Exit(True);
   end;
   Result := TryRule(ACatalog, RuleByName('random'), AItem);
+end;
+
+function PickMedia(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
+begin
+  Result := PickCore(ACatalog, AItem);
 end;
 
 initialization
