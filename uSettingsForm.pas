@@ -50,6 +50,8 @@ type
     FTransition: TComboBox;
     FTransMsLabel: TLabel;
     FTransMs: TEdit;
+    FHistLabel: TLabel;
+    FHistSize: TEdit;
     FRules: TRadioGroup;     // the selected rule is the one applied
     FToleranceLabel: TLabel;
     FTolerance: TEdit;
@@ -315,21 +317,24 @@ begin
   FTransMsLabel := NewLabel(FTabPlay, 420, 48);
   FTransMs := NewEdit(FTabPlay, 540, 45, 60);
 
+  FHistLabel := NewLabel(FTabPlay, 12, 80);
+  FHistSize := NewEdit(FTabPlay, 240, 77, 60);
+
   FRules := TRadioGroup.Create(Self);
   FRules.Parent := FTabPlay;
   FRules.Columns := 2;
-  FRules.SetBounds(12, 80, 612, 118);
+  FRules.SetBounds(12, 112, 612, 118);
 
-  FToleranceLabel := NewLabel(FTabPlay, 12, 216);
-  FTolerance := NewEdit(FTabPlay, 240, 213, 60);
+  FToleranceLabel := NewLabel(FTabPlay, 12, 248);
+  FTolerance := NewEdit(FTabPlay, 240, 245, 60);
 
-  FHomeNameLabel := NewLabel(FTabPlay, 12, 248);
-  FHomeName := NewEdit(FTabPlay, 240, 245, 250);
-  FGeoLabel := NewLabel(FTabPlay, 12, 280);
-  FLat := NewEdit(FTabPlay, 240, 277, 90);
-  FLon := NewEdit(FTabPlay, 336, 277, 90);
-  FRadius := NewEdit(FTabPlay, 432, 277, 58);
-  FAuto := NewCheck(FTabPlay, 500, 247, 128);
+  FHomeNameLabel := NewLabel(FTabPlay, 12, 280);
+  FHomeName := NewEdit(FTabPlay, 240, 277, 250);
+  FGeoLabel := NewLabel(FTabPlay, 12, 312);
+  FLat := NewEdit(FTabPlay, 240, 309, 90);
+  FLon := NewEdit(FTabPlay, 336, 309, 90);
+  FRadius := NewEdit(FTabPlay, 432, 309, 58);
+  FAuto := NewCheck(FTabPlay, 500, 279, 128);
   FAuto.Height := 40;
   FAuto.WordWrap := True;
 end;
@@ -455,6 +460,10 @@ begin
   FSecondsLabel.Caption := L('Время показа одного файла, сек:', 'Display time of one file, sec:');
   FTransLabel.Caption := L('Переход между слайдами:', 'Slide transition:');
   FTransMsLabel.Caption := L('Длительность, мс:', 'Duration, ms:');
+  FHistLabel.Caption := L('Назад (←), файлов:', 'Back (←), files:');
+  FHistSize.Hint := L('Сколько последних просмотренных файлов можно пролистать клавишей "назад", в том числе после перезапуска',
+    'How many of the last shown files the "back" key can go through, also after a restart');
+  FHistSize.ShowHint := True;
   FRules.Caption := L('Активное правило', 'Active rule');
   FToleranceLabel.Caption := L('"В этот день": отклонение, дней (±):', '"On this day": tolerance, days (±):');
   FHomeNameLabel.Caption := L('Текущее место (название):', 'Current place (name):');
@@ -836,6 +845,7 @@ begin
   ApplyTexts;
   FTransition.ItemIndex := Ord(Settings.Transition);
   FTransMs.Text := IntToStr(Settings.TransitionMs);
+  FHistSize.Text := IntToStr(Settings.HistorySize);
   FShowPhotos.Checked := Settings.MediaTypes in [mtPhotos, mtBoth];
   FShowVideos.Checked := Settings.MediaTypes in [mtVideos, mtBoth];
   FSilent.Checked := Settings.SilentVideo;
@@ -912,6 +922,7 @@ begin
   Settings.SlideSeconds := Max(1, StrToIntDef(FSeconds.Text, 10));
   Settings.Transition := TTransitionEffect(FTransition.ItemIndex);
   Settings.TransitionMs := Max(100, Min(3000, StrToIntDef(FTransMs.Text, 800)));
+  Settings.HistorySize := Max(0, Min(100000, StrToIntDef(FHistSize.Text, 100)));
   Settings.ActiveRules.Clear;
   Settings.ActiveRules.Add(FRuleNames[Max(0, FRules.ItemIndex)]);
   Settings.DayTolerance := StrToIntDef(FTolerance.Text, 0);

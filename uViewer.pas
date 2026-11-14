@@ -52,6 +52,8 @@ type
     FCurrentItem: TMediaItem;
     FPrevItem: TMediaItem;       // the file shown before FCurrentItem (the photo that is fading out)
     FPrevPath: string;
+    FHistoryRestored: Boolean;   // the history of the previous runs (history.cache) is loaded
+    FAppendHistory: Boolean;     // the file that is being shown is new in the history: it goes to history.cache
     FCurrentMarked: Boolean;     // its counter in shown.cache was already increased
     FCurrentShown: Boolean;      // the current file was shown completely (a video: it is visible)
     FHasCurrent: Boolean;
@@ -75,6 +77,7 @@ type
     procedure FitVideo;
     procedure PlayerError(Sender: TObject);
     procedure GoNext;
+    procedure RestoreHistory;
     procedure GoPrev;
     procedure ShowCurrent;
     procedure CommitCurrent(const AItem: TMediaItem; const APath: string);
@@ -136,7 +139,6 @@ var
   GViewer: TViewerForm;   // for the callbacks of background threads (never a dangling Self)
 
 const
-  HistoryLimit = 100000;
   MaxFailures = 25;
 
 procedure LoadOrientedPicture(APicture: TPicture; const APath: string; AOrientation: Integer);
@@ -546,10 +548,51 @@ begin
   end;
 end;
 
+{ The files shown in the previous runs (history.cache) are put in front of the history, so the key "back"
+  goes over them: as soon as the catalog is loaded (the files are found in it by their paths). }
+procedure TViewerForm.RestoreHistory;
+var
+  vLocs: TArray<string>;
+  vLoc: string;
+  vItem: TMediaItem;
+  vRestored: TList<TMediaItem>;
+  vWas: Integer;
+begin
+  if FHistoryRestored then
+    Exit;
+  if Settings.HistorySize <= 0 then
+  begin
+    FHistoryRestored := True;
+    Exit;
+  end;
+  if not FCatalog.Ready then
+    Exit;   // later
+  FHistoryRestored := True;
+  vLocs := LoadHistoryLocations(Settings.HistorySize);
+  vRestored := TList<TMediaItem>.Create;
+  try
+    for vLoc in vLocs do
+      if FCatalog.TryGetItem(vLoc, vItem) and ItemAllowed(vItem) then
+        vRestored.Add(vItem);
+    if vRestored.Count = 0 then
+      Exit;
+    vWas := Integer(FHistory.Count);
+    FHistory.InsertRange(0, vRestored);
+    if vWas = 0 then
+      FHistPos := Integer(vRestored.Count)   // nothing is shown yet: "back" starts at the last restored file
+    else
+      Inc(FHistPos, vRestored.Count);
+  finally
+    vRestored.Free;
+  end;
+end;
+
 procedure TViewerForm.GoNext;
 var
   vItem: TMediaItem;
 begin
+  RestoreHistory;
+  FAppendHistory := False;
   MarkCurrentShown;
   HideInfo;
   FPaused := False;
@@ -574,14 +617,17 @@ begin
     Exit;
   end;
   FHistory.Add(vItem);
-  if FHistory.Count > HistoryLimit then
-    FHistory.DeleteRange(0, FHistory.Count - HistoryLimit);
+  FAppendHistory := Settings.HistorySize > 0;   // written to history.cache when it is really shown
+  if FHistory.Count > Settings.HistorySize + 1 then
+    FHistory.DeleteRange(0, FHistory.Count - (Settings.HistorySize + 1));
   FHistPos := Integer(FHistory.Count) - 1;
   ShowCurrent;
 end;
 
 procedure TViewerForm.GoPrev;
 begin
+  RestoreHistory;
+  FAppendHistory := False;
   if FHistPos <= 0 then
     Exit;
   MarkCurrentShown;
@@ -692,6 +738,11 @@ begin
   FCurrentPath := APath;
   FHasCurrent := True;
   FCurrentMarked := False;
+  if FAppendHistory then
+  begin
+    AppendHistoryLocation(AItem.Location);   // a new file in the history (not one that "back" returned to)
+    FAppendHistory := False;
+  end;
   FCurrentShown := AItem.Kind = mkPhoto;   // a video counts when it becomes visible (StartVideo / CheckVideoSize)
 end;
 

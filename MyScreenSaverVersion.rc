@@ -1,8 +1,10 @@
-// Version of MyScreenSaver: change the numbers here (FILEVERSION, PRODUCTVERSION and the two strings).
+// Version of MyScreenSaver. The numbers (VERCOMMA, VERSTR) are in MyScreenSaverBuild.inc, which build.bat writes:
+// the first three numbers are VERBASE in build.bat, the last one is the number of commits of the Git repository.
 // build.bat compiles this file into MyScreenSaverVersion.res (the Delphi IDE does it too).
+#include "MyScreenSaverBuild.inc"
 1 VERSIONINFO
-FILEVERSION 2,0,0,3
-PRODUCTVERSION 2,0,0,3
+FILEVERSION VERCOMMA
+PRODUCTVERSION VERCOMMA
 FILEOS 0x4
 FILETYPE 0x1
 BEGIN
@@ -11,11 +13,11 @@ BEGIN
     BLOCK "040904E4"
     BEGIN
       VALUE "FileDescription", "MyScreenSaver"
-      VALUE "FileVersion", "2.0.0.3"
+      VALUE "FileVersion", VERSTR
       VALUE "InternalName", "MyScreenSaver"
       VALUE "OriginalFilename", "MyScreenSaver.exe"
       VALUE "ProductName", "MyScreenSaver"
-      VALUE "ProductVersion", "2.0.0.3"
+      VALUE "ProductVersion", VERSTR
     END
   END
   BLOCK "VarFileInfo"

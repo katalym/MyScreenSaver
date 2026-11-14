@@ -40,6 +40,7 @@ type
     MediaTypes: TMediaTypes;
     Transition: TTransitionEffect;
     TransitionMs: Integer;           // duration of the transition, milliseconds
+    HistorySize: Integer;            // how many shown files the key "back" can go through (also after a restart)
     SilentVideo: Boolean;            // play videos without sound (default: yes)
     SkipLargeVideos: Boolean;        // skip videos with more pixels than the screen has
     ExcludeRaw: Boolean;             // do not show RAW files (ARW, DNG, ...)
@@ -152,6 +153,7 @@ begin
   MediaTypes := mtBoth;
   Transition := teFade;
   TransitionMs := 800;
+  HistorySize := 100;
   SilentVideo := True;
   SkipLargeVideos := True;
   ExcludeRaw := True;
@@ -212,6 +214,7 @@ begin
       if vName = TransitionNames[vEffect] then
         Transition := vEffect;
     TransitionMs := Max(100, Min(3000, vIni.ReadInteger('General', 'TransitionMs', 800)));
+    HistorySize := Max(0, Min(100000, vIni.ReadInteger('General', 'HistorySize', 100)));
     SilentVideo := vIni.ReadBool('General', 'SilentVideo', True);
     SkipLargeVideos := vIni.ReadBool('General', 'SkipLargeVideos', True);
     ExcludeRaw := vIni.ReadBool('General', 'ExcludeRaw', True);
@@ -312,6 +315,7 @@ begin
     vIni.WriteInteger('General', 'SlideSeconds', SlideSeconds);
     vIni.WriteString('General', 'Transition', TransitionNames[Transition]);
     vIni.WriteInteger('General', 'TransitionMs', TransitionMs);
+    vIni.WriteInteger('General', 'HistorySize', HistorySize);
     vIni.WriteBool('General', 'SilentVideo', SilentVideo);
     vIni.WriteBool('General', 'SkipLargeVideos', SkipLargeVideos);
     vIni.WriteBool('General', 'ExcludeRaw', ExcludeRaw);

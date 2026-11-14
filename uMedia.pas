@@ -49,6 +49,7 @@ type
     function PopQuick(out AItem: TMediaItem): Boolean;
     function QuickCount: Integer;
     function Contains(const ALocation: string): Boolean;
+    function TryGetItem(const ALocation: string; out AItem: TMediaItem): Boolean;
     procedure Remove(const ALocation: string);
     procedure AddRange(AItems: TList<TMediaItem>);
     function Snapshot: TArray<TMediaItem>;
@@ -141,6 +142,10 @@ type
     Scanning: Boolean;     // the folders are being scanned
     FileBytes: Int64;      // size of the cache file
   end;
+
+{ Cache 4 (history.cache): the files that were shown, the oldest first, for the key "back" after a restart. }
+function LoadHistoryLocations(AMax: Integer): TArray<string>;   // the last AMax files
+procedure AppendHistoryLocation(const ALocation: string);
 
 { Cache 2 (shown.cache): how many times each file was shown. }
 function ShownTimes(const ALocation: string): Integer;
@@ -367,6 +372,20 @@ begin
   FLock.Enter;
   try
     Result := FIndex.ContainsKey(ALocation);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TMediaCatalog.TryGetItem(const ALocation: string; out AItem: TMediaItem): Boolean;
+var
+  vIdx: Integer;
+begin
+  FLock.Enter;
+  try
+    Result := FIndex.TryGetValue(ALocation, vIdx);
+    if Result then
+      AItem := FItems[vIdx];
   finally
     FLock.Leave;
   end;
@@ -930,6 +949,102 @@ begin
     end;
   finally
     vNew.Free;
+  end;
+end;
+
+{ ---- cache 4: the files that were shown, for the key "back" (history.cache) ----
+  Version<TAB>1
+  File                                   (the names of the columns)
+  then one line per shown file, the oldest first (a file can be there several times) }
+
+const
+  HistoryCacheVersion = 1;
+
+var
+  GHistoryLock: TCriticalSection;
+
+function HistoryCachePath: string;
+begin
+  Result := TPath.Combine(ExtractFilePath(TAppSettings.ConfigPath), 'history.cache');
+end;
+
+function HistoryHeader: string;
+begin
+  Result := 'Version'#9 + IntToStr(HistoryCacheVersion) + #13#10 + 'File';
+end;
+
+procedure AppendHistoryLocation(const ALocation: string);
+var
+  vWriter: TStreamWriter;
+  vNew: Boolean;
+begin
+  if ALocation = '' then
+    Exit;
+  GHistoryLock.Enter;
+  try
+    try
+      vNew := not FileExists(HistoryCachePath);
+      vWriter := TStreamWriter.Create(HistoryCachePath, True, TEncoding.UTF8);
+      try
+        if vNew then
+          vWriter.WriteLine(HistoryHeader);
+        vWriter.WriteLine(ALocation);
+      finally
+        vWriter.Free;
+      end;
+    except
+    end;
+  finally
+    GHistoryLock.Leave;
+  end;
+end;
+
+{ The last AMax files; the file is rewritten when it has many more lines than that. A file of another
+  version is deleted. }
+function LoadHistoryLocations(AMax: Integer): TArray<string>;
+var
+  vLines: TArray<string>;
+  vParts: TArray<string>;
+  vWriter: TStreamWriter;
+  vFrom, i: Integer;
+begin
+  Result := nil;
+  if AMax <= 0 then
+    Exit;
+  GHistoryLock.Enter;
+  try
+    try
+      if not FileExists(HistoryCachePath) then
+        Exit;
+      vLines := TFile.ReadAllLines(HistoryCachePath, TEncoding.UTF8);
+      vParts := nil;
+      if Length(vLines) > 0 then
+        vParts := vLines[0].Split([#9]);
+      if (Length(vParts) < 2) or (vParts[0] <> 'Version') or (vParts[1] <> IntToStr(HistoryCacheVersion)) then
+      begin
+        TFile.Delete(HistoryCachePath);
+        Exit;
+      end;
+      vFrom := Max(2, Length(vLines) - AMax);
+      SetLength(Result, Length(vLines) - vFrom);
+      for i := vFrom to High(vLines) do
+        Result[i - vFrom] := vLines[i];
+      if vFrom > 2 + AMax then
+      begin
+        // many more lines than needed: only the last ones are kept
+        vWriter := TStreamWriter.Create(HistoryCachePath, False, TEncoding.UTF8);
+        try
+          vWriter.WriteLine(HistoryHeader);
+          for i := 0 to High(Result) do
+            vWriter.WriteLine(Result[i]);
+        finally
+          vWriter.Free;
+        end;
+      end;
+    except
+    end;
+  finally
+    GHistoryLock.Leave;
   end;
 end;
 
@@ -1674,10 +1789,12 @@ initialization
   GShownLock := TCriticalSection.Create;
   GShown := TDictionary<string, Integer>.Create(TIStringComparer.Ordinal);
   GShownFileLock := TCriticalSection.Create;
+  GHistoryLock := TCriticalSection.Create;
 
 finalization
   FreeAndNil(GShown);
   FreeAndNil(GShownFileLock);
+  FreeAndNil(GHistoryLock);
   FreeAndNil(GShownLock);
   FreeAndNil(GCacheLock);
   FreeAndNil(GMetaCache);
