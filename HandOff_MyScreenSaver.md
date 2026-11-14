@@ -1,6 +1,6 @@
 # Handoff: MyScreenSaver (Delphi 13 screensaver and media viewer)
 
-Date: 2026-11-12
+Date: 2026-11-14
 
 ## Goal
 
@@ -11,14 +11,14 @@ Windows screensaver (.scr) and standalone photo/video viewer, built from
 
 - Project folder: `A:\git\MyScreenSaver` (was `D:\git\MyScreenSaver`) (everything in the root folder, no src/bin/dcu subfolders - user requirement)
 - GitHub: `git@github.com:katalym/MyScreenSaver.git`, branch `main`
-- Commits: `72f4ea3` initial, `a867883` info dialog / keywords / shutdown fix, `e8cbac7` ru/en languages + /p preview, `6d34598` preview/info/warnings fixes, `35a6662` photo/video selection + video fit + cache compaction, `a6263ca` configurable info-dialog fields, `c45cbc0` default slide time 4 s (by the user), `4ef98e9` slide transitions, `e0e7fb0` filters / version 1.1.1.1 / taskbar button, `1b2d120` tabbed settings + overlay, `479c0cb` share dialog / look, `9b8a7cb` messages instead of a black screen + Paused badge, `6f877a9` version 2.0.0.1 / one active rule / sequential rules / icon (pushed), `855f12c` Esc closes only the info dialog / new icon / build.bat regenerates the .res / version 2.0.0.2, then (uncommitted when this was written, version 2.0.0.3) even random order, split caches, info-dialog cache line
+- Commits: `72f4ea3` initial, `a867883` info dialog / keywords / shutdown fix, `e8cbac7` ru/en languages + /p preview, `6d34598` preview/info/warnings fixes, `35a6662` photo/video selection + video fit + cache compaction, `a6263ca` configurable info-dialog fields, `c45cbc0` default slide time 4 s (by the user), `4ef98e9` slide transitions, `e0e7fb0` filters / version 1.1.1.1 / taskbar button, `1b2d120` tabbed settings + overlay, `479c0cb` share dialog / look, `9b8a7cb` messages instead of a black screen + Paused badge, `6f877a9` version 2.0.0.1 / one active rule / sequential rules / icon (pushed), `855f12c` Esc closes only the info dialog / new icon / build.bat regenerates the .res / version 2.0.0.2, `3fa8491` version 2.0.0.3: even random order, split caches, info-dialog cache line, `d0dd082` back history over restarts + build number = commit count (the commits are not pushed unless the user said so)
 - `a867883` is pushed to `origin/main` (pushed by the user). Pushing is done by the user only on explicit request.
 - `.gitignore` excludes `*.exe`, `*.scr`, `*.dcu`, `*.dcr`, `*.res`, `*.local`, `*.dsk`, `*.~dsk`, `__history/`
   (user decided not to keep binaries in git; releases on GitHub are the suggested way to distribute the .scr)
 
 ## Build
 
-`build.bat` (version 2.0.0.3 now) -> single **64-bit** `MyScreenSaver.exe` plus identical copy `MyScreenSaver.scr` in the project root
+`build.bat` (version 2.0.0.x, x = number of commits) -> single **64-bit** `MyScreenSaver.exe` plus identical copy `MyScreenSaver.scr` in the project root
 (since `855f12c` built with `msbuild MyScreenSaver.dproj` Release/Win64, not dcc64: build.bat deletes `MyScreenSaver.res` first so the icon/manifest/version always come from the dproj; output compiled in `%TEMP%\MyScreenSaver_win64`; a few seconds slower). User wants only one 64-bit exe, no separate 32-bit.
 `build.bat` prints "Built" even if the final `copy` fails because a running instance locks the exe - check the
 exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change seems to have no effect.
@@ -40,7 +40,7 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
 | `uLang` | UI language (ru/en): `L('русский','English')`, `SetLanguage`, default from the Windows UI language |
 | `uInfoFields` | ids/titles of the built-in fields of the info dialog, `InfoFieldOn` |
 | `uSlideView` | the photo control: halftone-scaled bitmaps, transitions (AlphaBlend / BitBlt, timer 15 ms) |
-| `uVersion` | `AppVersion` read from the version resource of the exe (source: `MyScreenSaverVersion.rc`, compiled to the committed `MyScreenSaverVersion.res` by `build.bat` with brcc32) |
+| `uVersion` | `AppVersion` read from the version resource of the exe (source: `MyScreenSaverVersion.rc` + the generated `MyScreenSaverBuild.inc`, compiled to `MyScreenSaverVersion.res` by `build.bat` with brcc32) |
 | `uOverlay` | the overlay window: small layered (alpha 205) no-activate click-through top-level window owned by the viewer, text of the selected fields at one of 3x3 places |
 | `uShareIcons` | 16x16 icons drawn in code (e-mail, Telegram, WhatsApp, Facebook, copy image/path/name; 8x supersampled, straight alpha, `afDefined`) for the TBitBtn glyphs of the share dialog (TButton.Images does not work: no visual styles manifest) |
 | `uShareDialog` | the share dialog (a button per action; as wide as its content, buttons centered) opened by the Share button of the information dialog |
@@ -48,7 +48,7 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
 
 ## Implemented features
 
-- Hotkeys: Space pause, I info, Left/Right history prev/next (up to 100000), P share, Esc exit, C settings (standalone)
+- Hotkeys: Space pause, I info, Left/Right history prev/next (the size is a setting, see "Back history" below), P share, Esc exit, C settings (standalone)
 - Info dialog: centered panel sized to the text with gray border, selectable/copyable text (Ctrl+A, Ctrl+C,
   double click selects the value of a line without its caption), mouse stays active in saver mode while it is open;
   shows EXIF, GPS plus human-readable place (reverse geocoding), XP tags and IPTC/XMP tags
@@ -120,12 +120,12 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
   if the chosen rule finds nothing, the picker falls back to random. New rules `filenameasc`, `filenamedesc`, `fullnameasc`, `fullnamedesc`
   (`TSequentialRule.PickNext`: one pass over the catalog, smallest item after the previous one, wraps around; position lives only while the app runs; case-insensitive,
   ties by full path). Not verified on screen by me: the radio group layout (height 118, 7 rules) and the sequential play
-- Version 2.0.0.1 in `MyScreenSaverVersion.rc`; main icon `MyScreenSaver_Icon.ico`; `MyScreenSaver.res` (icon + manifest) is now committed, `MyScreenSaverVersion.res` is not (build.bat rebuilds it)
+- Main icon `MyScreenSaver_Icon.ico`; `MyScreenSaver.res` (icon + manifest) is now committed, `MyScreenSaverVersion.res` is not (build.bat rebuilds it)
 
 - Esc: with the information dialog open Esc only closes it (`HandleKey`: `if FInfoShown then HideInfo else Close`); the settings, share and delete dialogs were already protected by `FBusy`
   (the user's report about the settings dialog was not reproduced by reading the code; ask for the mode and focus if it still happens)
 - Icon: `MyScreenSaver_Icon.ico` is embedded through the generated `MyScreenSaver.res`; the old dcc64-only build.bat never refreshed it (the .ico has an old file date), see build above.
-  To change the version: edit `MyScreenSaverVersion.rc` (4 places: FILEVERSION, PRODUCTVERSION, two strings)
+  Version: see "Version number" below
 
 ## Caches (all in `%APPDATA%\MyScreenSaver\`, text files, append-only, the last line of a key wins)
 
@@ -140,6 +140,24 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
 - `places.cache` (cache 3, own version 1 in `uLocation`): `Version<TAB>1`, columns `Lat Lon PlaceEn PlaceRu`, one line per place with coordinates of 4 decimals (not per file). `ReverseGeocode` /
   `TryGetCachedGeocode` use it through the memory cache; every new answer is appended; a file of another version is deleted silently
 - "Clear shown" deletes `shown.cache`; "Clear all" deletes `catalog.cache` and `shown.cache` (not `places.cache`: places are slow to get back, about 1 request per second)
+
+## Version number (since `d0dd082`)
+
+- The last number = the number of commits of the Git repository: `build.bat` runs `git rev-list --count HEAD` and writes `MyScreenSaverBuild.inc` (`#define VERCOMMA 2,0,0,N`, `#define VERSTR "2.0.0.N\0"`),
+  which `MyScreenSaverVersion.rc` includes. The first three numbers are `set VERBASE=2.0.0` in `build.bat`. Without git the .inc stays as it is. The committed .inc is needed by the Delphi IDE
+- `MyScreenSaverBuild.inc` is changed by every build after a new commit (the count grows), so it shows as modified in `git status`; commit it with the next change
+- `brcc32` 5.40 GARBLES a version string whose length with the closing zero is odd (the exe showed `2.0.0.15:InternalName`): `build.bat` adds an explicit `\0` to those strings (`:writeinc`)
+- NO PowerShell in `build.bat`: the user runs it under FAR Manager and a `powershell.exe` call (my first version) changed his console; a plain-batch version leaves the environment and the folder as they were
+
+## Back history (v2.0.0.x, `d0dd082`)
+
+- Setting `[General] HistorySize` (default 100, 0..100000, 0 = no back history): Play tab, row "Back (←), files" under the slide transition (the rest of the tab moved down by 32). The in-memory
+  `FHistory` keeps `HistorySize + 1` files
+- `history.cache` (cache 4, own version 1 in `uMedia`): `Version<TAB>1`, column line `File`, then one path per line, the oldest first. A file is appended when it is shown for the FIRST time
+  (`FAppendHistory` is set in `GoNext` after `PickMedia` and used in `CommitCurrent`; going back appends nothing). `LoadHistoryLocations(N)` returns the last N and cuts the file when it has many more lines
+- `TViewerForm.RestoreHistory` (called at the start of `GoNext` / `GoPrev`, once, when the catalog is `Ready`): looks the paths up in the catalog (`TMediaCatalog.TryGetItem`), skips what is gone or no longer
+  `ItemAllowed`, inserts them in front of `FHistory`; with an empty history `FHistPos` is set to `Count` ("one past the last"), so the first "back" shows the last restored file and "next" picks a new one
+- "Clear all" does not delete `history.cache`. Not verified on screen by me: back after a restart, size 0, the Play tab layout
 
 ## Random order and the I key (v2.0.0.3)
 
