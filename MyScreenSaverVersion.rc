@@ -1,5 +1,5 @@
 // Version of MyScreenSaver. The numbers (VERCOMMA, VERSTR) are in MyScreenSaverBuild.inc, which build.bat writes:
-// the first three numbers are VERBASE in build.bat, the last one is the number of commits of the Git repository.
+// the first three numbers are VERBASE in build.bat, the last one is the build number (see :version in build.bat).
 // build.bat compiles this file into MyScreenSaverVersion.res (the Delphi IDE does it too).
 #include "MyScreenSaverBuild.inc"
 1 VERSIONINFO

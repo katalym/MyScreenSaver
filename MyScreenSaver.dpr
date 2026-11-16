@@ -34,6 +34,7 @@ uses
 var
   vArg: string;
   vHandle: Int64;
+  vWnd: HWND;
   ViewerForm: TViewerForm;
 
 begin
@@ -60,6 +61,23 @@ begin
     GViewerMode := vmScreenSaver
   else
     GViewerMode := vmStandalone;
+  // Only one viewer / screensaver at a time (the settings dialog and the preview may run next to it). The
+  // mutex lives as long as the process: Windows starts the screensaver while the viewer is open -> it just ends.
+  CreateMutex(nil, False, 'Local\MyScreenSaver_Viewer');
+  if GetLastError = ERROR_ALREADY_EXISTS then
+  begin
+    if GViewerMode = vmStandalone then
+    begin
+      vWnd := FindWindow('TViewerForm', nil);   // a second start of the viewer shows the first one
+      if vWnd <> 0 then
+      begin
+        if IsIconic(vWnd) then
+          ShowWindow(vWnd, SW_RESTORE);
+        SetForegroundWindow(vWnd);
+      end;
+    end;
+    Exit;
+  end;
   CleanCache;
   Application.CreateForm(TViewerForm, ViewerForm);
   Application.Run;

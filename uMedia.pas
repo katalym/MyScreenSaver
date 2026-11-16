@@ -114,7 +114,11 @@ function MediaKindOfFile(const AName: string; out AKind: TMediaKind): Boolean;
 function KindAllowed(AKind: TMediaKind): Boolean;
 { True if the path is inside one of the excluded folders (settings). }
 function IsExcludedPath(const APath: string): Boolean;
-{ Kind, excluded folders and RAW files together: may the item be shown? }
+{ True if a subfolder of the collection on the path has a name that matches one of the exclude patterns
+  (regular expressions of the settings, ignoring case). AIsFolder: the last part of the path is a folder too,
+  otherwise it is a file name. }
+function IsExcludedByPattern(const APath: string; AIsFolder: Boolean): Boolean;
+{ Kind, excluded folders, folder patterns and RAW files together: may the item be shown? }
 function ItemAllowed(const AItem: TMediaItem): Boolean;
 { Returns a local file path for the item; downloads remote files into the cache. }
 function EnsureLocalFile(const AItem: TMediaItem): string;
@@ -181,6 +185,9 @@ const
 var
   GMetaLock: TCriticalSection;
   GMetaCache: TDictionary<string, TMediaMeta>;
+  GPatternLock: TCriticalSection;
+  GPatternSource: string;               // the patterns the compiled list was made from
+  GPatternRegex: TArray<TRegEx>;
   GShownLock: TCriticalSection;
   GShownFileLock: TCriticalSection;
   GShown: TDictionary<string, Integer>;
@@ -262,9 +269,76 @@ begin
   end;
 end;
 
+{ The compiled exclude patterns (made again when the settings changed; a wrong pattern is ignored). }
+function PatternRegexes: TArray<TRegEx>;
+var
+  vSource, vLine: string;
+begin
+  vSource := Settings.ExcludePatterns.Text;
+  GPatternLock.Enter;
+  try
+    if vSource <> GPatternSource then
+    begin
+      GPatternSource := vSource;
+      SetLength(GPatternRegex, 0);
+      for vLine in vSource.Split([#13#10, #10]) do
+        if Trim(vLine) <> '' then
+          try
+            SetLength(GPatternRegex, Length(GPatternRegex) + 1);
+            GPatternRegex[High(GPatternRegex)] := TRegEx.Create(Trim(vLine), [roIgnoreCase, roCompiled]);
+          except
+            SetLength(GPatternRegex, Length(GPatternRegex) - 1);
+          end;
+    end;
+    Result := GPatternRegex;
+  finally
+    GPatternLock.Leave;
+  end;
+end;
+
+function IsExcludedByPattern(const APath: string; AIsFolder: Boolean): Boolean;
+var
+  vColl: TMediaCollection;
+  vRoot, vRel, vName: string;
+  vParts: TArray<string>;
+  vRegex: TArray<TRegEx>;
+  i, vLast, k: Integer;
+begin
+  Result := False;
+  if Settings.ExcludePatterns.Count = 0 then
+    Exit;
+  vRoot := '';
+  for vColl in Settings.Collections.ToArray do   // the collection the path belongs to (the longest root)
+    if (vColl.Location <> '') and (Length(vColl.Location) > Length(vRoot)) and
+      APath.StartsWith(vColl.Location, True) then
+      vRoot := vColl.Location;
+  if vRoot = '' then
+    Exit;
+  vRel := Copy(APath, Length(vRoot) + 1, MaxInt).Replace('\', '/').Trim(['/']);
+  if vRel = '' then
+    Exit;
+  vRegex := PatternRegexes;
+  if Length(vRegex) = 0 then
+    Exit;
+  vParts := vRel.Split(['/']);
+  vLast := High(vParts);
+  if not AIsFolder then
+    Dec(vLast);   // the file name is not a folder
+  for i := 0 to vLast do
+  begin
+    vName := vParts[i];
+    if APath.StartsWith('http', True) or APath.StartsWith('ftp', True) then
+      vName := TNetEncoding.URL.Decode(vName);
+    for k := 0 to High(vRegex) do
+      if vRegex[k].IsMatch(vName) then
+        Exit(True);
+  end;
+end;
+
 function ItemAllowed(const AItem: TMediaItem): Boolean;
 begin
-  Result := KindAllowed(AItem.Kind) and not IsExcludedPath(AItem.Location);
+  Result := KindAllowed(AItem.Kind) and not IsExcludedPath(AItem.Location) and
+    not IsExcludedByPattern(AItem.Location, False);
   if Result and Settings.ExcludeRaw and IsRawExt(LowerCase(ExtractFileExt(AItem.Location))) then
     Result := False;
 end;
@@ -661,7 +735,7 @@ begin
                 Break;
               end;
             Inc(vFileLines);
-            if IsExcludedPath(vParts[1]) or
+            if IsExcludedPath(vParts[1]) or IsExcludedByPattern(vParts[1], False) or
               (Settings.ExcludeRaw and IsRawExt(LowerCase(ExtractFileExt(vParts[1])))) then
             begin
               Inc(vSkipped);   // a newly excluded folder / RAW files: the file is rewritten without them
@@ -1125,7 +1199,7 @@ begin
             Continue;
           if (vSr.Attr and faDirectory) <> 0 then
             begin
-              if not IsExcludedPath(vPath + vSr.Name) then
+              if not (IsExcludedPath(vPath + vSr.Name) or IsExcludedByPattern(vPath + vSr.Name, True)) then
                 vDirs.Add(vSr.Name);
             end
           else if MediaKindOfFile(vSr.Name, vKind) and Wanted(vKind) then
@@ -1296,7 +1370,7 @@ var
   vSr: TSearchRec;
   vDir: string;
 begin
-  if IsExcludedPath(ADir) then
+  if IsExcludedPath(ADir) or IsExcludedByPattern(ADir, True) then
     Exit;
   vDir := IncludeTrailingPathDelimiter(ADir);
   if FindFirst(vDir + '*', faAnyFile, vSr) = 0 then
@@ -1359,7 +1433,7 @@ begin
     if vFull.EndsWith('/') then
     begin
       if vFull.Length > AUrl.Length then
-        if not IsExcludedPath(vFull) then
+        if not (IsExcludedPath(vFull) or IsExcludedByPattern(vFull, True)) then
           ADirs.Add(vFull);
     end
     else if MediaKindOfFile(vFull, vKind) then
@@ -1427,7 +1501,8 @@ var
         if MediaKindOfFile(vNames[i], vKind) then
           AddFile(AColl, 'ftp://' + vUri.Host + vBasePath + TNetEncoding.URL.Encode(vNames[i]));
       for i := 0 to vDirs.Count - 1 do
-        if not IsExcludedPath('ftp://' + vUri.Host + vBasePath + vDirs[i]) then
+        if not (IsExcludedPath('ftp://' + vUri.Host + vBasePath + vDirs[i]) or
+          IsExcludedByPattern('ftp://' + vUri.Host + vBasePath + vDirs[i], True)) then
           Walk(vBasePath + vDirs[i], ADepth + 1);
     finally
       vNames.Free;
@@ -1784,6 +1859,7 @@ end;
 
 initialization
   GMetaLock := TCriticalSection.Create;
+  GPatternLock := TCriticalSection.Create;
   GCacheLock := TCriticalSection.Create;
   GMetaCache := TDictionary<string, TMediaMeta>.Create;
   GShownLock := TCriticalSection.Create;
@@ -1799,5 +1875,6 @@ finalization
   FreeAndNil(GCacheLock);
   FreeAndNil(GMetaCache);
   FreeAndNil(GMetaLock);
+  FreeAndNil(GPatternLock);
 
 end.

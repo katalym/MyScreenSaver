@@ -42,6 +42,8 @@ type
     FSilent: TCheckBox;
     FSkipLarge: TCheckBox;
     FGbPhoto: TGroupBox;
+    FGbPattern: TGroupBox;
+    FPatterns: TMemo;        // exclude subfolders by pattern: one regular expression per line
     FNoRaw: TCheckBox;
     // play
     FSecondsLabel: TLabel;
@@ -52,6 +54,7 @@ type
     FTransMs: TEdit;
     FHistLabel: TLabel;
     FHistSize: TEdit;
+    FFullScreen: TCheckBox;
     FRules: TRadioGroup;     // the selected rule is the one applied
     FToleranceLabel: TLabel;
     FTolerance: TEdit;
@@ -305,6 +308,14 @@ begin
   FGbPhoto := NewGroup(FTabTypes, 190, 62);
   FNoRaw := NewCheck(FGbPhoto, 16, 26, 580);
   FNoRaw.ShowHint := True;
+
+  FGbPattern := NewGroup(FTabTypes, 260, 112);
+  FPatterns := TMemo.Create(Self);
+  FPatterns.Parent := FGbPattern;
+  FPatterns.SetBounds(12, 22, 588, 80);
+  FPatterns.ScrollBars := ssBoth;
+  FPatterns.WordWrap := False;
+  FPatterns.ShowHint := True;
 end;
 
 procedure TSettingsForm.BuildPlayTab;
@@ -319,6 +330,7 @@ begin
 
   FHistLabel := NewLabel(FTabPlay, 12, 80);
   FHistSize := NewEdit(FTabPlay, 240, 77, 60);
+  FFullScreen := NewCheck(FTabPlay, 330, 79, 290);
 
   FRules := TRadioGroup.Create(Self);
   FRules.Parent := FTabPlay;
@@ -424,7 +436,7 @@ begin
   FOk.Caption := L('Сохранить', 'Save');
   FCancel.Caption := L('Отмена', 'Cancel');
   FTabColl.Caption := L('Медиаколлекции', 'Media collections');
-  FTabTypes.Caption := L('Типы файлов', 'File types');
+  FTabTypes.Caption := L('Фильтры', 'Filters');
   FTabPlay.Caption := L('Показ', 'Play');
   FTabInfo.Caption := L('Информация', 'Information');
   FTabOverlay.Caption := L('Наложение', 'Overlay');
@@ -451,6 +463,12 @@ begin
   FSkipLarge.Hint := L('Сравнивается число пикселей (ширина × высота) видео и экрана',
     'The number of pixels (width x height) of the video and of the screen is compared');
   FGbPhoto.Caption := L('Фото', 'Photos');
+  FGbPattern.Caption := L('Исключить подпапки по шаблону (регулярные выражения, по одному в строке)',
+    'Exclude subfolders by pattern (regular expressions, one per line)');
+  FPatterns.Hint := L('Имя подпапки сравнивается с каждым шаблоном без учёта регистра, например ^DNG$ или .*wedding.*. ' +
+    'Подпапка и всё, что в ней, не показывается.',
+    'The name of a subfolder is matched with every pattern, ignoring case, for example ^DNG$ or .*wedding.*. ' +
+    'The subfolder and everything in it is not shown.');
   FNoRaw.Caption := L('Исключить RAW-файлы (ARW, DNG, CR2, CR3, NEF, ORF, RAF, RW2 и др.)',
     'Exclude RAW files (ARW, DNG, CR2, CR3, NEF, ORF, RAF, RW2, etc.)');
   FNoRaw.Hint := L('Если снять флажок, RAW-файлы показываются, когда в Windows установлен их кодек',
@@ -464,6 +482,10 @@ begin
   FHistSize.Hint := L('Сколько последних просмотренных файлов можно пролистать клавишей "назад", в том числе после перезапуска',
     'How many of the last shown files the "back" key can go through, also after a restart');
   FHistSize.ShowHint := True;
+  FFullScreen.Caption := L('Полный экран в окне просмотрщика (F11)', 'Full screen in the viewer window (F11)');
+  FFullScreen.Hint := L('Только для запуска MyScreenSaver.exe: окно без заголовка на весь экран. Клавиша F11 переключает режим.',
+    'Only for MyScreenSaver.exe: a window without a caption over the whole screen. The key F11 switches the mode.');
+  FFullScreen.ShowHint := True;
   FRules.Caption := L('Активное правило', 'Active rule');
   FToleranceLabel.Caption := L('"В этот день": отклонение, дней (±):', '"On this day": tolerance, days (±):');
   FHomeNameLabel.Caption := L('Текущее место (название):', 'Current place (name):');
@@ -832,6 +854,7 @@ begin
   FExcl.Items.Clear;
   for i := 0 to Integer(Settings.ExcludedFolders.Count) - 1 do
     FExcl.Items.Add(Settings.ExcludedFolders[i]);
+  FPatterns.Lines.Assign(Settings.ExcludePatterns);
 
   // own EXIF tags (the marks of the field lists are set below)
   FCustom.Clear;
@@ -846,6 +869,7 @@ begin
   FTransition.ItemIndex := Ord(Settings.Transition);
   FTransMs.Text := IntToStr(Settings.TransitionMs);
   FHistSize.Text := IntToStr(Settings.HistorySize);
+  FFullScreen.Checked := Settings.FullScreen;
   FShowPhotos.Checked := Settings.MediaTypes in [mtPhotos, mtBoth];
   FShowVideos.Checked := Settings.MediaTypes in [mtVideos, mtBoth];
   FSilent.Checked := Settings.SilentVideo;
@@ -906,6 +930,10 @@ begin
     Settings.Collections.Add(FItems[i]);
   end;
   Settings.ExcludedFolders.Assign(FExcl.Items);
+  Settings.ExcludePatterns.Clear;
+  for i := 0 to Integer(FPatterns.Lines.Count) - 1 do
+    if Trim(FPatterns.Lines[i]) <> '' then
+      Settings.ExcludePatterns.Add(Trim(FPatterns.Lines[i]));
 
   // file types
   if FShowPhotos.Checked and FShowVideos.Checked then
@@ -923,6 +951,7 @@ begin
   Settings.Transition := TTransitionEffect(FTransition.ItemIndex);
   Settings.TransitionMs := Max(100, Min(3000, StrToIntDef(FTransMs.Text, 800)));
   Settings.HistorySize := Max(0, Min(100000, StrToIntDef(FHistSize.Text, 100)));
+  Settings.FullScreen := FFullScreen.Checked;
   Settings.ActiveRules.Clear;
   Settings.ActiveRules.Add(FRuleNames[Max(0, FRules.ItemIndex)]);
   Settings.DayTolerance := StrToIntDef(FTolerance.Text, 0);

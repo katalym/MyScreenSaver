@@ -1,6 +1,6 @@
 # Handoff: MyScreenSaver (Delphi 13 screensaver and media viewer)
 
-Date: 2026-11-14
+Date: 2026-11-15
 
 ## Goal
 
@@ -18,7 +18,7 @@ Windows screensaver (.scr) and standalone photo/video viewer, built from
 
 ## Build
 
-`build.bat` (version 2.0.0.x, x = number of commits) -> single **64-bit** `MyScreenSaver.exe` plus identical copy `MyScreenSaver.scr` in the project root
+`build.bat` (version 3.0.0.x (VERBASE 3.0.0 since 2026-11-15; before: 2.0.0), x = the build number, see "Version number") -> single **64-bit** `MyScreenSaver.exe` plus identical copy `MyScreenSaver.scr` in the project root
 (since `855f12c` built with `msbuild MyScreenSaver.dproj` Release/Win64, not dcc64: build.bat deletes `MyScreenSaver.res` first so the icon/manifest/version always come from the dproj; output compiled in `%TEMP%\MyScreenSaver_win64`; a few seconds slower). User wants only one 64-bit exe, no separate 32-bit.
 `build.bat` prints "Built" even if the final `copy` fails because a running instance locks the exe - check the
 exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change seems to have no effect.
@@ -84,7 +84,7 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
   `VerInfo_IncludeVerInfo` is false in the dproj so the IDE does not add a second version resource
 
 - Settings are ONE form with 4 tabs (`uSettingsForm`; the dialogs `uFiltersForm` / `uInfoFieldsForm` are gone): Media collections
-  (collections + excluded folders), File types (photos/videos, silent, skip large, exclude RAW), Play (time, transition,
+  (collections + excluded folders), Filters (formerly "File types": photos/videos, silent, skip large, exclude RAW, exclude subfolders by pattern), Play (time, transition,
   active rule (radio group), rule parameters), Information (fields + own EXIF tags); language combo above the tabs;
   one Save/Cancel for everything; committed and pushed. Open question: the transition and the rule parameters (place/tolerance)
   stayed on the Play tab because they had no other tab
@@ -141,13 +141,41 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
   `TryGetCachedGeocode` use it through the memory cache; every new answer is appended; a file of another version is deleted silently
 - "Clear shown" deletes `shown.cache`; "Clear all" deletes `catalog.cache` and `shown.cache` (not `places.cache`: places are slow to get back, about 1 request per second)
 
-## Version number (since `d0dd082`)
+## Version number (the build-number scheme of 2026-11-15; earlier: commit count, then days since 2026-11-01)
 
-- The last number = the number of commits of the Git repository: `build.bat` runs `git rev-list --count HEAD` and writes `MyScreenSaverBuild.inc` (`#define VERCOMMA 2,0,0,N`, `#define VERSTR "2.0.0.N\0"`),
-  which `MyScreenSaverVersion.rc` includes. The first three numbers are `set VERBASE=2.0.0` in `build.bat`. Without git the .inc stays as it is. The committed .inc is needed by the Delphi IDE
-- `MyScreenSaverBuild.inc` is changed by every build after a new commit (the count grows), so it shows as modified in `git status`; commit it with the next change
+- The user's rule: IGNORE the commit count; the last number (build number) starts with 1 when the FIRST number of the version changes and goes up by one for the changes of the code that are about to be
+  committed. Implementation (`build.bat`, `:version`; plain batch, no PowerShell): the state is kept in `MyScreenSaverBuild.inc` (`// verbase=3.0.0 head=<commit>`, `#define VERCOMMA 3,0,0,N`):
+  the first number of `VERBASE` differs from the file's (or no state) -> N = 1, head = HEAD; otherwise if code files (`*.pas *.dpr *.dfm *.dproj *.rc *.bat`, `git status --porcelain`, untracked included)
+  have changes AND the recorded head is not HEAD (a commit was made since the last increase) -> N + 1, head = HEAD; otherwise N stays. So the number grows once per commit with code changes, however many
+  builds are made before it; README / handoff-only commits do not raise it. The exe built before a commit carries the number that the commit will have (the first build with the changes raises it).
+  First number 3 -> the scheme started at 3.0.0.1 on 2026-11-15 (earlier numbers: 3.0.0.20 = commit count, 3.0.0.14 = day count, both dropped). Tested with simulated states (1 / stays / +1 / reset)
+  `:writeinc` writes `MyScreenSaverBuild.inc` (`#define VERSTR "3.0.0.N\0"`),
+  which `MyScreenSaverVersion.rc` includes. The first three numbers are `set VERBASE=3.0.0` in `build.bat`. Without git the .inc stays as it is. The committed .inc is needed by the Delphi IDE
+- `MyScreenSaverBuild.inc` changes with the first build of new code changes, so it shows as modified in `git status`: commit it WITH those changes. `release_to_github.bat` needs a new build number for a new release (the tag is `v<version>`)
 - `brcc32` 5.40 GARBLES a version string whose length with the closing zero is odd (the exe showed `2.0.0.15:InternalName`): `build.bat` adds an explicit `\0` to those strings (`:writeinc`)
 - NO PowerShell in `build.bat`: the user runs it under FAR Manager and a `powershell.exe` call (my first version) changed his console; a plain-batch version leaves the environment and the folder as they were
+
+## Standalone viewer: full screen and Esc (uncommitted when this was written)
+
+- Setting `[General] FullScreen` (default 0 = as before: a maximized window with a caption): Play tab, check box next to "Back (←), files". `TViewerForm.SetFullScreen` (standalone mode only) removes
+  `WS_CAPTION or WS_THICKFRAME` with `SetWindowLongPtr` and sizes the window to its monitor (`SWP_FRAMECHANGED`), WITHOUT recreating the window (a `BorderStyle` change would recreate it and the WMP
+  control); the old placement is kept in `FSavedPlacement` (`GetWindowPlacement`, a maximized window is restored first) and is set back when the full screen is switched off. Applied at `DoShow` and after the
+  settings dialog; the key F11 switches it and saves the choice (`Settings.Save`). In the screensaver mode F11 is just a key that ends it
+- Esc in the standalone viewer asks "Close the application?" (`ConfirmExit`: `MB_YESNO or MB_DEFBUTTON1`, `FBusy` is set so the keys go to the box); Esc with the information dialog open still closes only
+  the dialog; in the screensaver mode Esc closes at once. The window's own close button closes at once (not asked for). Not tested on screen by me
+
+## Single instance and the Filters tab (uncommitted when this was written)
+
+- One viewer / screensaver at a time: `MyScreenSaver.dpr` creates the named mutex `Local\MyScreenSaver_Viewer` (kept until the process ends) after the `/c` and `/p` branches. If it already exists
+  the new process ends at once; a second STANDALONE start first brings the first window (`FindWindow('TViewerForm')`) to the front. So the `.scr` that Windows starts while the user watches the
+  slideshow in the `.exe` does nothing. `/c` (settings) and `/p` (preview) are NOT blocked. Not tested on screen by me (a test would open a full-screen window on the user's desktop)
+- The settings tab "File types" is now "Filters" / "Фильтры" (`FTabTypes`): what to show, videos, photos (RAW) and the new group "Exclude subfolders by pattern" (`FGbPattern` + `FPatterns` memo):
+  regular expressions, one per line, modelled on `grbExcludeFolders` / `memExcludeFoldersMask` of `A:\git\FoldersToPiwigoSyncr` (there: `TRegEx.Create(s, [roIgnoreCase]).Match(folder name)`)
+- INI `[Exclude] PatternCount`, `Pattern1…` (`Settings.ExcludePatterns`). Defaults `^dng$` and `^panoramas$` (set in the constructor; replaced by the INI list only when `PatternCount` exists in the INI, so an empty saved list stays empty). `uMedia.IsExcludedByPattern(path, AIsFolder)`: finds the collection root of the path (longest match), takes the folders BELOW the root
+  (for a file path without the file name) and matches each folder NAME with the compiled patterns (`PatternRegexes`: cached, rebuilt when the pattern text changed, a wrong pattern is ignored;
+  HTTP/FTP names are URL-decoded). Used in `ItemAllowed`, in `LoadCatalogCache` and at the 4 places where the scanner decides whether to enter a folder, so excluded folders are not scanned and
+  disappear from the cache at the next scan. Saving the settings rescans (`OpenSettings`), as for the excluded folder list
+- Not verified on screen/with data by me: the Filters tab layout (the pattern group is at top 260, height 112), the patterns on real folders
 
 ## Back history (v2.0.0.x, `d0dd082`)
 

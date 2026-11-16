@@ -41,10 +41,12 @@ type
     Transition: TTransitionEffect;
     TransitionMs: Integer;           // duration of the transition, milliseconds
     HistorySize: Integer;            // how many shown files the key "back" can go through (also after a restart)
+    FullScreen: Boolean;             // the standalone viewer (not the screensaver) fills the whole screen, without a caption
     SilentVideo: Boolean;            // play videos without sound (default: yes)
     SkipLargeVideos: Boolean;        // skip videos with more pixels than the screen has
     ExcludeRaw: Boolean;             // do not show RAW files (ARW, DNG, ...)
     ExcludedFolders: TStringList;    // folders (with subfolders) that are not shown
+    ExcludePatterns: TStringList;    // regular expressions: a subfolder whose name matches is not shown
     ActiveRules: TStringList;
     InfoFields: TStringList;          // enabled built-in fields of the information dialog (key I)
     InfoFieldsConfigured: Boolean;    // False: all fields are shown (default)
@@ -146,6 +148,9 @@ begin
   ActiveRules := TStringList.Create;
   InfoFields := TStringList.Create;
   ExcludedFolders := TStringList.Create;
+  ExcludePatterns := TStringList.Create;
+  ExcludePatterns.Add('^dng$');          // the defaults, until the settings have their own list
+  ExcludePatterns.Add('^panoramas$');
   OverlayFields := TStringList.Create;
   CustomTags := TList<TInfoCustomTag>.Create;
   SlideSeconds := 4;
@@ -154,6 +159,7 @@ begin
   Transition := teFade;
   TransitionMs := 800;
   HistorySize := 100;
+  FullScreen := False;
   SilentVideo := True;
   SkipLargeVideos := True;
   ExcludeRaw := True;
@@ -175,6 +181,7 @@ destructor TAppSettings.Destroy;
 begin
   FreeAndNil(OverlayFields);
   FreeAndNil(ExcludedFolders);
+  FreeAndNil(ExcludePatterns);
   FreeAndNil(CustomTags);
   FreeAndNil(InfoFields);
   FreeAndNil(ActiveRules);
@@ -215,6 +222,7 @@ begin
         Transition := vEffect;
     TransitionMs := Max(100, Min(3000, vIni.ReadInteger('General', 'TransitionMs', 800)));
     HistorySize := Max(0, Min(100000, vIni.ReadInteger('General', 'HistorySize', 100)));
+    FullScreen := vIni.ReadBool('General', 'FullScreen', False);
     SilentVideo := vIni.ReadBool('General', 'SilentVideo', True);
     SkipLargeVideos := vIni.ReadBool('General', 'SkipLargeVideos', True);
     ExcludeRaw := vIni.ReadBool('General', 'ExcludeRaw', True);
@@ -223,6 +231,14 @@ begin
     for i := 1 to vCount do
       if vIni.ReadString('Exclude', 'Folder' + IntToStr(i), '') <> '' then
         ExcludedFolders.Add(vIni.ReadString('Exclude', 'Folder' + IntToStr(i), ''));
+    if vIni.ValueExists('Exclude', 'PatternCount') then   // saved by the settings (it can be empty): replaces the defaults
+    begin
+      ExcludePatterns.Clear;
+      vCount := vIni.ReadInteger('Exclude', 'PatternCount', 0);
+      for i := 1 to vCount do
+        if vIni.ReadString('Exclude', 'Pattern' + IntToStr(i), '') <> '' then
+          ExcludePatterns.Add(vIni.ReadString('Exclude', 'Pattern' + IntToStr(i), ''));
+    end;
     if vIni.ValueExists('Overlay', 'Fields') then
       OverlayFields.CommaText := vIni.ReadString('Overlay', 'Fields', '');
     vName := LowerCase(vIni.ReadString('Overlay', 'Position', 'bottomright'));
@@ -316,12 +332,16 @@ begin
     vIni.WriteString('General', 'Transition', TransitionNames[Transition]);
     vIni.WriteInteger('General', 'TransitionMs', TransitionMs);
     vIni.WriteInteger('General', 'HistorySize', HistorySize);
+    vIni.WriteBool('General', 'FullScreen', FullScreen);
     vIni.WriteBool('General', 'SilentVideo', SilentVideo);
     vIni.WriteBool('General', 'SkipLargeVideos', SkipLargeVideos);
     vIni.WriteBool('General', 'ExcludeRaw', ExcludeRaw);
     vIni.WriteInteger('Exclude', 'Count', Integer(ExcludedFolders.Count));
     for i := 0 to Integer(ExcludedFolders.Count) - 1 do
       vIni.WriteString('Exclude', 'Folder' + IntToStr(i + 1), ExcludedFolders[i]);
+    vIni.WriteInteger('Exclude', 'PatternCount', Integer(ExcludePatterns.Count));
+    for i := 0 to Integer(ExcludePatterns.Count) - 1 do
+      vIni.WriteString('Exclude', 'Pattern' + IntToStr(i + 1), ExcludePatterns[i]);
     vIni.WriteString('Overlay', 'Fields', OverlayFields.CommaText);
     vIni.WriteString('Overlay', 'Position', OverlayPositionNames[Max(0, Min(8, OverlayPosition))]);
     vIni.WriteString('Info', 'FontName', InfoFontName);

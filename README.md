@@ -8,7 +8,8 @@
 
 Скринсейвер Windows и просмотрщик фото/видео (Delphi 13, VCL, 64 бита, без баз данных).
 Интерфейс на русском и английском языках.
-Версия **2.0.0.N**: первые три числа — `VERBASE` в `build.bat`, последнее — число коммитов репозитория Git
+Версия **3.0.0.N**: первые три числа — `VERBASE` в `build.bat`, последнее — номер сборки (1 при смене первого числа,
+далее +1 за каждый коммит с изменениями кода)
 (видна в окне настроек, в заголовке окна и в свойствах файла).
 Требования: `C:\Claude\Screensaver\Требования_к_приложению.md`.
 
@@ -21,8 +22,9 @@ build.bat
 Результат в этой же папке: `MyScreenSaver.exe` (отдельная программа) и `MyScreenSaver.scr` (скринсейвер).
 Чтобы установить скринсейвер: ПКМ на `.scr` → «Установить».
 
-Последнее число версии `build.bat` берёт из числа коммитов Git (`git rev-list --count HEAD`) и записывает в
-`MyScreenSaverBuild.inc`. Выложить готовые `.exe` и `.scr` на GitHub: `release_to_github.bat` (инструкция —
+Номер сборки (последнее число версии) ведёт `build.bat` и хранит в `MyScreenSaverBuild.inc`: при смене первого
+числа `VERBASE` он снова 1; когда есть несохранённые изменения кода (pas, dpr, dfm, dproj, rc, bat), а после
+прошлого повышения был сделан новый коммит, первая же сборка увеличивает его на 1 — один раз на каждый коммит. Выложить готовые `.exe` и `.scr` на GitHub: `release_to_github.bat` (инструкция —
 `release_to_github.md`).
 
 ### Режимы запуска
@@ -32,12 +34,17 @@ build.bat
 | `/s` | скринсейвер (выход по движению мыши, клику или любой «чужой» клавише) |
 | `/c` | окно настроек |
 | `/p <hwnd>` | предпросмотр в маленьком мониторе окна «Параметры экранной заставки»: одно случайное фото |
-| без параметров | отдельный просмотрщик (клавиша **C** — настройки, **Esc** — выход) |
+| без параметров | отдельный просмотрщик (клавиша **C** — настройки, **F11** — полный экран, **Esc** — выход с вопросом) |
+
+Одновременно работает только один просмотрщик или скринсейвер: если окно просмотрщика уже открыто, запуск `.scr`
+(по таймеру Windows) завершается сразу, а второй запуск `.exe` выводит первое окно на передний план. Окно настроек
+(`/c`) и предпросмотр (`/p`) этим не блокируются.
 
 ### Горячие клавиши
 
 Пробел — пауза · **I** — окно информации о файле · ← — предыдущий (сколько файлов можно пролистать назад — настройка «Назад (←), файлов», по умолчанию 100;
-история хранится между запусками) · → — следующий · Esc — выход (при открытом окне информации закрывает только его).
+история хранится между запусками) · → — следующий · **F11** — полный экран (только в отдельном просмотрщике `.exe`) · Esc — выход (при открытом окне
+информации закрывает только его; в отдельном просмотрщике `.exe` спрашивает «Закрыть приложение?», по умолчанию «Да»).
 
 Окно информации (EXIF, GPS и название места, теги, путь, размер, разрешение…; текст можно выделять и копировать,
 двойной щелчок выделяет значение строки) одновременно служит окном действий — под текстом три кнопки:
@@ -60,12 +67,15 @@ build.bat
 
 - **Медиаколлекции** — коллекции для показа (локальные папки, UNC, HTTP-листинг, FTP; отмеченные используются)
   и исключённые папки / подпапки (файлы в них не показываются; локальные, сетевые и HTTP/FTP-адреса).
-- **Типы файлов** — что показывать (флажки «Показывать фото» и «Показывать видео»; хотя бы один всегда отмечен),
+- **Фильтры** — что показывать (флажки «Показывать фото» и «Показывать видео»; хотя бы один всегда отмечен),
   видео без звука (по умолчанию включено: звук выключен), пропуск видео, у которых больше пикселей, чем у экрана
   (по умолчанию включено; проверяется при начале воспроизведения), исключение RAW-файлов (ARW, DNG, CR2, CR3, NEF,
   ORF, RAF, RW2 и др.; по умолчанию включено — RAW показываются, только если флажок снят и в Windows есть кодек).
+  Группа «Исключить подпапки по шаблону» — регулярные выражения, по одному в строке: подпапка коллекции, имя которой
+  подходит под шаблон (без учёта регистра, например `^DNG$` или `.*wedding.*`), и всё внутри неё не показываются.
+  По умолчанию: `^dng$` и `^panoramas$`.
 - **Показ** — слайд-шоу: время показа, переход между слайдами
-  и его длительность, число файлов истории «назад», активное правило (одно, по умолчанию «случайный файл»; в списке:
+  и его длительность, число файлов истории «назад», полный экран в окне просмотрщика (`.exe`; по умолчанию окно с заголовком), активное правило (одно, по умолчанию «случайный файл»; в списке:
   случайный файл, в этот день, рядом с текущим местом, по имени файла и по полному имени — по возрастанию и по убыванию)
   и параметры правил («в этот день», текущее место).
 - **Информация** — поля окна информации (клавиша **I**): все встроенные поля (файл, размер, камера, теги XP /
@@ -80,7 +90,7 @@ build.bat
   запрашивается в фоне, наложение обновляется, когда оно получено.
 
 Файл настроек: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; в `[General]` ключи `Language=ru|en`,
-`HistorySize=100` и др.). Пароли коллекций хранятся в INI открытым текстом.
+`HistorySize=100` и др.; исключения в `[Exclude]`: папки `Folder1…`, шаблоны `Pattern1…`). Пароли коллекций хранятся в INI открытым текстом.
 
 ### Кэши
 
@@ -139,8 +149,8 @@ build.bat
 
 Windows screensaver and photo/video viewer (Delphi 13, VCL, 64-bit, no database).
 The user interface is available in Russian and English.
-Version **2.0.0.N**: the first three numbers are `VERBASE` in `build.bat`, the last one is the number of commits
-of the Git repository (shown in the settings dialog, the window title and the file properties).
+Version **3.0.0.N**: the first three numbers are `VERBASE` in `build.bat`, the last one is the build number (1 when
+the first number changes, then +1 for every commit that has changes of the code) (shown in the settings dialog, the window title and the file properties).
 Requirements: `C:\Claude\Screensaver\Требования_к_приложению.md` (Russian).
 
 ### Build
@@ -152,8 +162,9 @@ build.bat
 The result is in the same folder: `MyScreenSaver.exe` (standalone program) and `MyScreenSaver.scr` (screensaver).
 To install the screensaver: right-click the `.scr` → "Install".
 
-`build.bat` takes the last number of the version from the number of Git commits (`git rev-list --count HEAD`) and
-writes it to `MyScreenSaverBuild.inc`. To publish the finished `.exe` and `.scr` on GitHub: `release_to_github.bat`
+`build.bat` keeps the build number (the last number of the version) in `MyScreenSaverBuild.inc`: when the first
+number of `VERBASE` changes it is 1 again; when the code (pas, dpr, dfm, dproj, rc, bat) has uncommitted changes and a
+new commit has been made since the last increase, the first build raises it by 1 — once for every commit. To publish the finished `.exe` and `.scr` on GitHub: `release_to_github.bat`
 (instruction: `release_to_github.md`).
 
 ### Run modes
@@ -163,12 +174,17 @@ writes it to `MyScreenSaverBuild.inc`. To publish the finished `.exe` and `.scr`
 | `/s` | screensaver (exits on mouse move, click or any "foreign" key) |
 | `/c` | settings dialog |
 | `/p <hwnd>` | preview in the small monitor of the "Screen Saver Settings" dialog: one random photo |
-| none | standalone viewer (key **C** — settings, **Esc** — exit) |
+| none | standalone viewer (key **C** — settings, **F11** — full screen, **Esc** — exit after a question) |
+
+Only one viewer or screensaver runs at a time: if the viewer window is already open, starting the `.scr` (by the
+Windows timer) ends at once, and a second start of the `.exe` brings the first window to the front. The settings
+dialog (`/c`) and the preview (`/p`) are not blocked by this.
 
 ### Hotkeys
 
 Space — pause · **I** — the file information dialog · ← — previous (how many files you can go back through is the setting "Back (←), files", 100 by default; the history
-is kept between runs) · → — next · Esc — exit (with the information dialog open it closes only the dialog).
+is kept between runs) · → — next · **F11** — full screen (the standalone viewer `.exe` only) · Esc — exit (with the information dialog open it
+closes only the dialog; in the standalone viewer `.exe` it asks "Close the application?", "Yes" is the default).
 
 The information dialog (EXIF, GPS and place name, tags, path, size, resolution…; the text can be selected and
 copied, a double click selects the value of a line) is also the dialog of actions — three buttons under the text:
@@ -192,12 +208,15 @@ Settings dialog (`/c` or key **C**) — one form with tabs; above the tabs the *
 
 - **Media collections** — the collections to show (local folders, UNC, HTTP listing, FTP; checked ones are used)
   and the excluded folders / subfolders (files in them are not shown; local, network and HTTP/FTP addresses).
-- **File types** — what to show (check boxes "Show photos" and "Show videos"; at least one always stays checked),
+- **Filters** — what to show (check boxes "Show photos" and "Show videos"; at least one always stays checked),
   silent videos (on by default: the sound is off), skipping of videos that have more pixels than the screen
   (on by default; checked when a video starts to play), exclusion of RAW files (ARW, DNG, CR2, CR3, NEF, ORF,
   RAF, RW2, etc.; on by default — RAW files are shown only if the box is unchecked and Windows has a codec).
+  The group "Exclude subfolders by pattern" takes regular expressions, one per line: a subfolder of a collection whose
+  name matches a pattern (ignoring case, for example `^DNG$` or `.*wedding.*`) and everything in it is not shown.
+  The defaults are `^dng$` and `^panoramas$`.
 - **Play** — the slideshow: display time, slide transition and its
-  duration, the number of history files for "back", the active rule (one, "random file" by default; the list: random
+  duration, the number of history files for "back", full screen in the viewer window (`.exe`; a window with a caption by default), the active rule (one, "random file" by default; the list: random
   file, on this day, near the current place, by file name and by full file name — ascending and descending) and the
   rule parameters ("on this day", current place).
 - **Information** — the fields of the information dialog (key **I**): all built-in fields (file, size, camera,
@@ -212,7 +231,7 @@ Settings dialog (`/c` or key **C**) — one form with tabs; above the tabs the *
   shown. The place name from GPS is requested in the background, the overlay is updated when it has arrived.
 
 Settings file: `%APPDATA%\MyScreenSaver\MyScreenSaver.ini` (INI, UTF-8; keys `Language=ru|en`, `HistorySize=100`
-etc. in `[General]`). Collection passwords are stored in the INI as plain text.
+etc. in `[General]`; the exclusions in `[Exclude]`: folders `Folder1…`, patterns `Pattern1…`). Collection passwords are stored in the INI as plain text.
 
 ### Caches
 

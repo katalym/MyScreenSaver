@@ -54,6 +54,8 @@ type
     FPrevPath: string;
     FHistoryRestored: Boolean;   // the history of the previous runs (history.cache) is loaded
     FAppendHistory: Boolean;     // the file that is being shown is new in the history: it goes to history.cache
+    FFullScreen: Boolean;        // the standalone window covers the whole screen (no caption)
+    FSavedPlacement: TWindowPlacement;   // the window before the full screen
     FCurrentMarked: Boolean;     // its counter in shown.cache was already increased
     FCurrentShown: Boolean;      // the current file was shown completely (a video: it is visible)
     FHasCurrent: Boolean;
@@ -77,6 +79,8 @@ type
     procedure FitVideo;
     procedure PlayerError(Sender: TObject);
     procedure GoNext;
+    procedure SetFullScreen(AOn: Boolean);
+    procedure ConfirmExit;
     procedure RestoreHistory;
     procedure GoPrev;
     procedure ShowCurrent;
@@ -334,7 +338,9 @@ begin
   inherited;
   GetCursorPos(FStartPt);
   if FMode = vmScreenSaver then
-    CreateBlankForms;
+    CreateBlankForms
+  else if Settings.FullScreen then
+    SetFullScreen(True);
   if not FTimer.Enabled then
   begin
     ShowMessage(L('Загрузка списка файлов...', 'Loading the file list...'));
@@ -485,8 +491,25 @@ begin
     VK_ESCAPE:
       if FInfoShown then
         HideInfo   // Esc closes the information dialog only
+      else if FMode = vmStandalone then
+      begin
+        if not ARepeat then
+          ConfirmExit;   // the viewer asks before it closes
+      end
       else
         Close;
+    VK_F11:
+      if FMode = vmStandalone then
+      begin
+        if not ARepeat then
+        begin
+          SetFullScreen(not FFullScreen);
+          Settings.FullScreen := FFullScreen;   // remembered
+          Settings.Save;
+        end;
+      end
+      else
+        Close;   // the screensaver ends on any key
     VK_SPACE:
       if not ARepeat then
         TogglePause;
@@ -585,6 +608,54 @@ begin
   finally
     vRestored.Free;
   end;
+end;
+
+{ Full screen of the standalone viewer: the caption and the frame are removed and the window gets the whole monitor
+  (it covers the taskbar); the window is not recreated, so the video player keeps playing. }
+procedure TViewerForm.SetFullScreen(AOn: Boolean);
+var
+  vStyle: NativeInt;
+  vMon: TMonitor;
+begin
+  if (FMode <> vmStandalone) or (AOn = FFullScreen) or not HandleAllocated then
+    Exit;
+  vStyle := GetWindowLongPtr(Handle, GWL_STYLE);
+  if AOn then
+  begin
+    FSavedPlacement.length := SizeOf(FSavedPlacement);
+    GetWindowPlacement(Handle, FSavedPlacement);
+    if IsZoomed(Handle) then
+      ShowWindow(Handle, SW_SHOWNORMAL);
+    vMon := Monitor;
+    SetWindowLongPtr(Handle, GWL_STYLE, vStyle and not (WS_CAPTION or WS_THICKFRAME));
+    SetWindowPos(Handle, HWND_TOP, vMon.Left, vMon.Top, vMon.Width, vMon.Height,
+      SWP_FRAMECHANGED or SWP_NOOWNERZORDER);
+  end
+  else
+  begin
+    SetWindowLongPtr(Handle, GWL_STYLE, vStyle or WS_CAPTION or WS_THICKFRAME);
+    if FSavedPlacement.length = SizeOf(FSavedPlacement) then
+      SetWindowPlacement(Handle, FSavedPlacement);
+    SetWindowPos(Handle, 0, 0, 0, 0, 0,
+      SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_NOOWNERZORDER or SWP_FRAMECHANGED);
+  end;
+  FFullScreen := AOn;
+end;
+
+{ Esc in the standalone viewer: a question, "Yes" is the default (Enter). }
+procedure TViewerForm.ConfirmExit;
+var
+  vYes: Boolean;
+begin
+  FBusy := True;   // the keys belong to the question
+  try
+    vYes := Application.MessageBox(PChar(L('Закрыть приложение?', 'Close the application?')),
+      PChar(Caption), MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON1) = IDYES;
+  finally
+    FBusy := False;
+  end;
+  if vYes then
+    Close;
 end;
 
 procedure TViewerForm.GoNext;
@@ -1628,6 +1699,7 @@ begin
     begin
       StopScan;
       StartScan;
+      SetFullScreen(Settings.FullScreen);   // the option may have been changed
     end;
   finally
     FBusy := False;
