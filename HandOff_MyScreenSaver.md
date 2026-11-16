@@ -18,7 +18,7 @@ Windows screensaver (.scr) and standalone photo/video viewer, built from
 
 ## Build
 
-`build.bat` (version 3.0.0.x (VERBASE 3.0.0 since 2026-11-15; before: 2.0.0), x = the build number, see "Version number") -> single **64-bit** `MyScreenSaver.exe` plus identical copy `MyScreenSaver.scr` in the project root
+`build.bat` (version 3.0.0.1, set BY HAND in `MyScreenSaverVersion.rc`, see "Version number") -> single **64-bit** `MyScreenSaver.exe` plus identical copy `MyScreenSaver.scr` in the project root
 (since `855f12c` built with `msbuild MyScreenSaver.dproj` Release/Win64, not dcc64: build.bat deletes `MyScreenSaver.res` first so the icon/manifest/version always come from the dproj; output compiled in `%TEMP%\MyScreenSaver_win64`; a few seconds slower). User wants only one 64-bit exe, no separate 32-bit.
 `build.bat` prints "Built" even if the final `copy` fails because a running instance locks the exe - check the
 exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change seems to have no effect.
@@ -40,7 +40,7 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
 | `uLang` | UI language (ru/en): `L('русский','English')`, `SetLanguage`, default from the Windows UI language |
 | `uInfoFields` | ids/titles of the built-in fields of the info dialog, `InfoFieldOn` |
 | `uSlideView` | the photo control: halftone-scaled bitmaps, transitions (AlphaBlend / BitBlt, timer 15 ms) |
-| `uVersion` | `AppVersion` read from the version resource of the exe (source: `MyScreenSaverVersion.rc` + the generated `MyScreenSaverBuild.inc`, compiled to `MyScreenSaverVersion.res` by `build.bat` with brcc32) |
+| `uVersion` | `AppVersion` read from the version resource of the exe (source: `MyScreenSaverVersion.rc`, compiled to `MyScreenSaverVersion.res` by `build.bat` with brcc32) |
 | `uOverlay` | the overlay window: small layered (alpha 205) no-activate click-through top-level window owned by the viewer, text of the selected fields at one of 3x3 places |
 | `uShareIcons` | 16x16 icons drawn in code (e-mail, Telegram, WhatsApp, Facebook, copy image/path/name; 8x supersampled, straight alpha, `afDefined`) for the TBitBtn glyphs of the share dialog (TButton.Images does not work: no visual styles manifest) |
 | `uShareDialog` | the share dialog (a button per action; as wide as its content, buttons centered) opened by the Share button of the information dialog |
@@ -141,19 +141,15 @@ exe timestamp / running processes (`Get-Process MyScreenSaver`) when a change se
   `TryGetCachedGeocode` use it through the memory cache; every new answer is appended; a file of another version is deleted silently
 - "Clear shown" deletes `shown.cache`; "Clear all" deletes `catalog.cache` and `shown.cache` (not `places.cache`: places are slow to get back, about 1 request per second)
 
-## Version number (the build-number scheme of 2026-11-15; earlier: commit count, then days since 2026-11-01)
+## Version number (set by hand since 2026-11-15)
 
-- The user's rule: IGNORE the commit count; the last number (build number) starts with 1 when the FIRST number of the version changes and goes up by one for the changes of the code that are about to be
-  committed. Implementation (`build.bat`, `:version`; plain batch, no PowerShell): the state is kept in `MyScreenSaverBuild.inc` (`// verbase=3.0.0 head=<commit>`, `#define VERCOMMA 3,0,0,N`):
-  the first number of `VERBASE` differs from the file's (or no state) -> N = 1, head = HEAD; otherwise if code files (`*.pas *.dpr *.dfm *.dproj *.rc *.bat`, `git status --porcelain`, untracked included)
-  have changes AND the recorded head is not HEAD (a commit was made since the last increase) -> N + 1, head = HEAD; otherwise N stays. So the number grows once per commit with code changes, however many
-  builds are made before it; README / handoff-only commits do not raise it. The exe built before a commit carries the number that the commit will have (the first build with the changes raises it).
-  First number 3 -> the scheme started at 3.0.0.1 on 2026-11-15 (earlier numbers: 3.0.0.20 = commit count, 3.0.0.14 = day count, both dropped). Tested with simulated states (1 / stays / +1 / reset)
-  `:writeinc` writes `MyScreenSaverBuild.inc` (`#define VERSTR "3.0.0.N\0"`),
-  which `MyScreenSaverVersion.rc` includes. The first three numbers are `set VERBASE=3.0.0` in `build.bat`. Without git the .inc stays as it is. The committed .inc is needed by the Delphi IDE
-- `MyScreenSaverBuild.inc` changes with the first build of new code changes, so it shows as modified in `git status`: commit it WITH those changes. `release_to_github.bat` needs a new build number for a new release (the tag is `v<version>`)
-- `brcc32` 5.40 GARBLES a version string whose length with the closing zero is odd (the exe showed `2.0.0.15:InternalName`): `build.bat` adds an explicit `\0` to those strings (`:writeinc`)
-- NO PowerShell in `build.bat`: the user runs it under FAR Manager and a `powershell.exe` call (my first version) changed his console; a plain-batch version leaves the environment and the folder as they were
+- The user's decision (after three automatic schemes: commit count, days since 2026-11-01, a counter per commit with code changes - all REMOVED): the version is set BY HAND every time, "forget any automation".
+  It is 3.0.0.1 now. Edit `MyScreenSaverVersion.rc` (4 places: `FILEVERSION`, `PRODUCTVERSION`, the strings `FileVersion` and `ProductVersion`); `build.bat` only compiles it with brcc32.
+  The generated `MyScreenSaverBuild.inc` and the version code of `build.bat` are gone; `release_to_github.bat` reads `FileVersion` from the .rc
+- `brcc32` 5.40 GARBLES a version string whose length with the closing zero is odd, i.e. a string with an EVEN number of characters (the exe showed `2.0.0.15:InternalName`): write such a string with an
+  explicit zero at the end, e.g. `"3.0.0.10\0"` (the comment in the .rc says so). Strings like `3.0.0.1` or `3.0.0.100` are fine
+- NO PowerShell in `build.bat`: the user runs it under FAR Manager and a `powershell.exe` call (an earlier version of mine) changed his console
+- `build.bat` and every .bat must keep CRLF line endings (a `sed -i` converted `build.bat` to LF once; LF breaks labels in cmd)
 
 ## Standalone viewer: full screen and Esc (uncommitted when this was written)
 

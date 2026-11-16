@@ -8,9 +8,8 @@
 
 Скринсейвер Windows и просмотрщик фото/видео (Delphi 13, VCL, 64 бита, без баз данных).
 Интерфейс на русском и английском языках.
-Версия **3.0.0.N**: первые три числа — `VERBASE` в `build.bat`, последнее — номер сборки (1 при смене первого числа,
-далее +1 за каждый коммит с изменениями кода)
-(видна в окне настроек, в заголовке окна и в свойствах файла).
+Версия **3.0.0.1** (задаётся вручную в `MyScreenSaverVersion.rc`, видна в окне настроек, в заголовке окна и в
+свойствах файла).
 Требования: `C:\Claude\Screensaver\Требования_к_приложению.md`.
 
 ### Сборка
@@ -22,9 +21,7 @@ build.bat
 Результат в этой же папке: `MyScreenSaver.exe` (отдельная программа) и `MyScreenSaver.scr` (скринсейвер).
 Чтобы установить скринсейвер: ПКМ на `.scr` → «Установить».
 
-Номер сборки (последнее число версии) ведёт `build.bat` и хранит в `MyScreenSaverBuild.inc`: при смене первого
-числа `VERBASE` он снова 1; когда есть несохранённые изменения кода (pas, dpr, dfm, dproj, rc, bat), а после
-прошлого повышения был сделан новый коммит, первая же сборка увеличивает его на 1 — один раз на каждый коммит. Выложить готовые `.exe` и `.scr` на GitHub: `release_to_github.bat` (инструкция —
+Версия задаётся вручную в `MyScreenSaverVersion.rc` (четыре места: `FILEVERSION`, `PRODUCTVERSION` и две строки). Выложить готовые `.exe` и `.scr` на GitHub: `release_to_github.bat` (инструкция —
 `release_to_github.md`).
 
 ### Режимы запуска
@@ -149,8 +146,8 @@ build.bat
 
 Windows screensaver and photo/video viewer (Delphi 13, VCL, 64-bit, no database).
 The user interface is available in Russian and English.
-Version **3.0.0.N**: the first three numbers are `VERBASE` in `build.bat`, the last one is the build number (1 when
-the first number changes, then +1 for every commit that has changes of the code) (shown in the settings dialog, the window title and the file properties).
+Version **3.0.0.1** (set by hand in `MyScreenSaverVersion.rc`, shown in the settings dialog, the window title and the
+file properties).
 Requirements: `C:\Claude\Screensaver\Требования_к_приложению.md` (Russian).
 
 ### Build
@@ -162,9 +159,7 @@ build.bat
 The result is in the same folder: `MyScreenSaver.exe` (standalone program) and `MyScreenSaver.scr` (screensaver).
 To install the screensaver: right-click the `.scr` → "Install".
 
-`build.bat` keeps the build number (the last number of the version) in `MyScreenSaverBuild.inc`: when the first
-number of `VERBASE` changes it is 1 again; when the code (pas, dpr, dfm, dproj, rc, bat) has uncommitted changes and a
-new commit has been made since the last increase, the first build raises it by 1 — once for every commit. To publish the finished `.exe` and `.scr` on GitHub: `release_to_github.bat`
+The version is set by hand in `MyScreenSaverVersion.rc` (four places: `FILEVERSION`, `PRODUCTVERSION` and two strings). To publish the finished `.exe` and `.scr` on GitHub: `release_to_github.bat`
 (instruction: `release_to_github.md`).
 
 ### Run modes
