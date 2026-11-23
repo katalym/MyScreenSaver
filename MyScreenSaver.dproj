@@ -124,34 +124,38 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="uExif.pas"/>
-        <DCCReference Include="uVersion.pas"/>
-        <DCCReference Include="uLang.pas"/>
-        <DCCReference Include="uConfig.pas"/>
-        <DCCReference Include="uLocation.pas"/>
-        <DCCReference Include="uMedia.pas"/>
-        <DCCReference Include="uRules.pas"/>
-        <DCCReference Include="uShare.pas"/>
-        <DCCReference Include="uShareDialog.pas">
+        <DCCReference Include="MyScreenSaver_Exif.pas"/>
+        <DCCReference Include="MyScreenSaver_Version.pas"/>
+        <DCCReference Include="MyScreenSaver_Lang.pas"/>
+        <DCCReference Include="MyScreenSaver_Config.pas"/>
+        <DCCReference Include="MyScreenSaver_Location.pas"/>
+        <DCCReference Include="MyScreenSaver_Media.pas"/>
+        <DCCReference Include="MyScreenSaver_Rules.pas"/>
+        <DCCReference Include="MyScreenSaver_Share.pas"/>
+        <DCCReference Include="MyScreenSaver_ShareDialog.pas">
             <Form>ShareForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="uShareIcons.pas"/>
-        <DCCReference Include="uInfoFields.pas"/>
-        <DCCReference Include="uSettingsForm.pas">
+        <DCCReference Include="MyScreenSaver_ShareIcons.pas"/>
+        <DCCReference Include="MyScreenSaver_InfoFields.pas"/>
+        <DCCReference Include="MyScreenSaver_SettingsForm.pas">
             <Form>SettingsForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="uOverlay.pas">
+        <DCCReference Include="MyScreenSaver_InfoDialog.pas">
+            <Form>InfoForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
+        <DCCReference Include="MyScreenSaver_Overlay.pas">
             <Form>OverlayWindow</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="uSlideView.pas"/>
-        <DCCReference Include="uViewer.pas">
+        <DCCReference Include="MyScreenSaver_SlideView.pas"/>
+        <DCCReference Include="MyScreenSaver_Viewer.pas">
             <Form>ViewerForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="uPreview.pas">
+        <DCCReference Include="MyScreenSaver_Preview.pas">
             <Form>PreviewForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>

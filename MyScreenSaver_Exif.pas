@@ -1,4 +1,4 @@
-﻿unit uExif;
+﻿unit MyScreenSaver_Exif;
 
 { Minimal EXIF reader for JPEG files (no external dependencies). }
 
@@ -33,7 +33,7 @@ function ReadExifTagTexts(const AFileName: string; const ATags: TArray<Integer>)
 implementation
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.RegularExpressions, uLang;
+  System.SysUtils, System.Classes, System.Math, System.RegularExpressions, MyScreenSaver_Lang;
 
 type
   TTiffReader = class

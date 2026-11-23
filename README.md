@@ -8,7 +8,7 @@
 
 Скринсейвер Windows и просмотрщик фото/видео (Delphi 13, VCL, 64 бита, без баз данных).
 Интерфейс на русском и английском языках.
-Версия **3.0.0.1** (задаётся вручную в `MyScreenSaverVersion.rc`, видна в окне настроек, в заголовке окна и в
+Версия **3.0.0.2** (задаётся вручную в `MyScreenSaverVersion.rc`, видна в окне настроек, в заголовке окна и в
 свойствах файла).
 Требования: `C:\Claude\Screensaver\Требования_к_приложению.md`.
 
@@ -20,6 +20,8 @@ build.bat
 
 Результат в этой же папке: `MyScreenSaver.exe` (отдельная программа) и `MyScreenSaver.scr` (скринсейвер).
 Чтобы установить скринсейвер: ПКМ на `.scr` → «Установить».
+
+Исходники: `MyScreenSaver_<Имя>.pas` (у форм ещё `.dfm`), например `MyScreenSaver_Viewer.pas`; имя модуля совпадает с именем файла.
 
 Версия задаётся вручную в `MyScreenSaverVersion.rc` (четыре места: `FILEVERSION`, `PRODUCTVERSION` и две строки). Выложить готовые `.exe` и `.scr` на GitHub: `release_to_github.bat` (инструкция —
 `release_to_github.md`).
@@ -37,17 +39,25 @@ build.bat
 (по таймеру Windows) завершается сразу, а второй запуск `.exe` выводит первое окно на передний план. Окно настроек
 (`/c`) и предпросмотр (`/p`) этим не блокируются.
 
+В отдельном просмотрщике (`.exe`) указатель мыши скрывается через 1 секунду после остановки и снова появляется при
+движении мыши; пока открыто окно (информация, вопрос, настройки), он всегда виден.
+
 ### Горячие клавиши
 
-Пробел — пауза · **I** — окно информации о файле · ← — предыдущий (сколько файлов можно пролистать назад — настройка «Назад (←), файлов», по умолчанию 100;
+Пробел — пауза · **S** — звук видео включить / выключить (в `.exe` и в скринсейвере — скринсейвер не закрывается, выбор запоминается; пока видео идёт без
+звука, внизу экрана всё время написано «Звук выключен»; при включении звука надпись исчезает) · **I** — окно информации о файле · ← — предыдущий (сколько файлов можно пролистать назад — настройка «Назад (←), файлов», по умолчанию 100;
 история хранится между запусками) · → — следующий · **F11** — полный экран (только в отдельном просмотрщике `.exe`) · Esc — выход (при открытом окне
-информации закрывает только его; в отдельном просмотрщике `.exe` спрашивает «Закрыть приложение?», по умолчанию «Да»).
+информации закрывает только его; в отдельном просмотрщике `.exe` спрашивает «Закрыть приложение?» (кнопки «Да» / «Нет»: клавиши **Y** / **N** или **Alt+Y** / **Alt+N**, по умолчанию «Да»; такие же кнопки у вопросов об удалении файла и очистке кэша); пока вопрос открыт,
+смена файлов и воспроизведение видео остановлены).
 
-Окно информации (EXIF, GPS и название места, теги, путь, размер, разрешение…; текст можно выделять и копировать,
-двойной щелчок выделяет значение строки) одновременно служит окном действий — под текстом три кнопки:
-- **Поделиться...** — открывает по центру окно, в котором на каждое действие своя кнопка: **E-mail** (MAPI, файл во вложении), **Telegram**,
-  **WhatsApp**, **Facebook** (файл копируется в буфер обмена и приложение открывается, останется вставить),
-  **Копировать изображение** (только для фото), **Копировать полный путь**, **Копировать имя файла**;
+Окно информации — отдельное окно с заголовком: его можно перетащить на экране и на другой монитор, в следующий раз оно
+откроется там же (EXIF, GPS и название места, теги, путь, размер, разрешение…; текст можно выделять и копировать,
+двойной щелчок выделяет значение строки) одновременно служит окном действий — под текстом три кнопки (клавиши: **S** — Поделиться, **D** — Удалить, **C** — Закрыть, а также **Alt+S**, **Alt+D**, **Alt+C** — подчёркнутые буквы в названиях кнопок):
+- **Поделиться...** — открывает по центру окно, в котором на каждое действие своя кнопка: **E-mail** (MAPI, файл во вложении: «Файл будет вложен в письмо»), **Telegram**,
+  **WhatsApp**, **Facebook** (файл копируется в буфер обмена и приложение открывается, останется вставить; справа от кнопки об этом
+  написано: «Файл будет скопирован в буфер обмена. Вставьте его (Ctrl+V) в чат …»),
+  **Копировать изображение** (только для фото: при показе видео кнопка есть, но недоступна), **Копировать полный путь**,
+  **Копировать имя файла**; справа от каждой кнопки коротко написано, что она делает;
 - **Удалить** — удалить показанный файл после подтверждения (в корзину; файл на сетевом ресурсе удаляется
   безвозвратно; недоступно для файлов с HTTP/FTP);
 - **Закрыть** — закрывает только окно информации (как повторное нажатие **I**), показ продолжается.
@@ -59,7 +69,7 @@ build.bat
 
 ### Конфигурация и язык
 
-Окно настроек (`/c` или клавиша **C**) — одна форма с вкладками; над вкладками выбор **языка интерфейса:
+Окно настроек (`/c` или клавиша **C**) — одна форма с вкладками (у кнопок подчёркнуты буквы для **Alt+буква**); над вкладками выбор **языка интерфейса:
 Русский (Russian) или English (Английский)** (по умолчанию язык Windows). Кнопка «Сохранить» применяет всё сразу.
 
 - **Медиаколлекции** — коллекции для показа (локальные папки, UNC, HTTP-листинг, FTP; отмеченные используются)
@@ -107,7 +117,7 @@ build.bat
 
 Сбросить кэш можно кнопками в окне информации или удалением файлов.
 
-### Переходы между слайдами (`uSlideView.pas`)
+### Переходы между слайдами (`MyScreenSaver_SlideView.pas`)
 
 Эффекты: нет, **плавное затухание** (cross-fade), **через чёрное**, **сдвиг**, **шторка**, **случайный**
 (для каждой смены свой эффект). По умолчанию — плавное затухание, 800 мс (100–3000 мс; не дольше половины
@@ -116,7 +126,7 @@ build.bat
 чёрного; смена видео на видео — без перехода (окно Windows Media Player нельзя смешивать с картинкой).
 В INI: `Transition=none|fade|black|slide|wipe|random`, `TransitionMs=800`.
 
-### Правила выбора (`uRules.pas`)
+### Правила выбора (`MyScreenSaver_Rules.pas`)
 
 `random` (по умолчанию), `onthisday` («в этот день» в прошлые годы, дата из EXIF или файла),
 `location` (снято в радиусе от текущего места; место задаётся в настройках или определяется по IP).
@@ -126,7 +136,7 @@ build.bat
 показаны, показывают их повторно.
 Новое правило — наследник `TMediaRule` + регистрация в `initialization`.
 
-### Языки (`uLang.pas`)
+### Языки (`MyScreenSaver_Lang.pas`)
 
 Все тексты интерфейса задаются парой `L('русский', 'English')`. Название места в информации о файле
 запрашивается (OpenStreetMap Nominatim) на выбранном языке.
@@ -146,7 +156,7 @@ build.bat
 
 Windows screensaver and photo/video viewer (Delphi 13, VCL, 64-bit, no database).
 The user interface is available in Russian and English.
-Version **3.0.0.1** (set by hand in `MyScreenSaverVersion.rc`, shown in the settings dialog, the window title and the
+Version **3.0.0.2** (set by hand in `MyScreenSaverVersion.rc`, shown in the settings dialog, the window title and the
 file properties).
 Requirements: `C:\Claude\Screensaver\Требования_к_приложению.md` (Russian).
 
@@ -158,6 +168,9 @@ build.bat
 
 The result is in the same folder: `MyScreenSaver.exe` (standalone program) and `MyScreenSaver.scr` (screensaver).
 To install the screensaver: right-click the `.scr` → "Install".
+
+The sources are `MyScreenSaver_<Name>.pas` (forms also have a `.dfm`), for example `MyScreenSaver_Viewer.pas`; the unit name is the
+file name.
 
 The version is set by hand in `MyScreenSaverVersion.rc` (four places: `FILEVERSION`, `PRODUCTVERSION` and two strings). To publish the finished `.exe` and `.scr` on GitHub: `release_to_github.bat`
 (instruction: `release_to_github.md`).
@@ -175,17 +188,23 @@ Only one viewer or screensaver runs at a time: if the viewer window is already o
 Windows timer) ends at once, and a second start of the `.exe` brings the first window to the front. The settings
 dialog (`/c`) and the preview (`/p`) are not blocked by this.
 
+In the standalone viewer (`.exe`) the mouse pointer is hidden 1 second after it stopped moving and appears again when
+the mouse moves; while a dialog is open (information, a question, the settings) it is always visible.
+
 ### Hotkeys
 
-Space — pause · **I** — the file information dialog · ← — previous (how many files you can go back through is the setting "Back (←), files", 100 by default; the history
+Space — pause · **S** — switch the sound of the videos on / off (in the `.exe` and in the screensaver, which does not end, the choice is remembered;
+while a video plays without sound, "Sound is off" is shown at the bottom of the screen all the time and it disappears when the sound is switched on) · **I** — the file information dialog · ← — previous (how many files you can go back through is the setting "Back (←), files", 100 by default; the history
 is kept between runs) · → — next · **F11** — full screen (the standalone viewer `.exe` only) · Esc — exit (with the information dialog open it
-closes only the dialog; in the standalone viewer `.exe` it asks "Close the application?", "Yes" is the default).
+closes only the dialog; in the standalone viewer `.exe` it asks "Close the application?" (buttons "Yes" / "No": keys **Y** / **N** or **Alt+Y** / **Alt+N**, "Yes" is the default; the questions about deleting a file and clearing the cache have the same buttons); while the question is open,
+the change of files and the playing of a video are stopped).
 
-The information dialog (EXIF, GPS and place name, tags, path, size, resolution…; the text can be selected and
-copied, a double click selects the value of a line) is also the dialog of actions — three buttons under the text:
-- **Share...** — opens a dialog in the middle with a separate button for every action: **E-mail** (MAPI, the file is attached), **Telegram**,
+The information dialog is a window of its own with a caption: it can be dragged over the screen and to another monitor,
+and it opens at the same place the next time (EXIF, GPS and place name, tags, path, size, resolution…; the text can be selected and
+copied, a double click selects the value of a line) is also the dialog of actions — three buttons under the text (keys: **S** — Share, **D** — Delete, **C** — Close, and also **Alt+S**, **Alt+D**, **Alt+C** — the underlined letters of the captions):
+- **Share...** — opens a dialog in the middle with a separate button for every action: **E-mail** (MAPI, the file is attached: "The file will be attached to the e-mail"), **Telegram**,
   **WhatsApp**, **Facebook** (the file is copied to the clipboard and the application is opened, you only have
-  to paste), **Copy image** (photos only), **Copy full path**, **Copy file name**;
+  to paste; a note at the right of the button says so: "The file will be copied to the clipboard. Paste it (Ctrl+V) into the ... chat"), **Copy image** (photos only: while a video is shown the button is there but disabled), **Copy full path**, **Copy file name**; a short note at the right of every button says what it does;
 - **Delete** — delete the shown file after a confirmation (to the Recycle Bin; a file on a network share is
   deleted permanently; not available for HTTP/FTP files);
 - **Close** — closes only the information dialog (like pressing **I** again), the slideshow goes on.
@@ -198,7 +217,7 @@ and the dialog is for the photo that was on the screen.
 
 ### Configuration and language
 
-Settings dialog (`/c` or key **C**) — one form with tabs; above the tabs the **interface language:
+Settings dialog (`/c` or key **C**) — one form with tabs (the buttons have underlined letters for **Alt+letter**); above the tabs the **interface language:
 Русский (Russian) or English (Английский)** (the Windows language by default). "Save" applies everything at once.
 
 - **Media collections** — the collections to show (local folders, UNC, HTTP listing, FTP; checked ones are used)
@@ -247,7 +266,7 @@ All cache files are in `%APPDATA%\MyScreenSaver\` (text, appended at the end; fo
 
 The caches can be reset with the buttons of the information dialog or by deleting the files.
 
-### Slide transitions (`uSlideView.pas`)
+### Slide transitions (`MyScreenSaver_SlideView.pas`)
 
 Effects: none, **cross-fade**, **fade through black**, **slide**, **wipe**, **random** (a different effect
 for every change). Cross-fade, 800 ms by default (100–3000 ms; never longer than half of the slide time).
@@ -256,7 +275,7 @@ transition is at most 250 ms. A photo fades to black before a video, and the nex
 after a video; video to video has no transition (the Windows Media Player window cannot be blended with
 a picture). In the INI: `Transition=none|fade|black|slide|wipe|random`, `TransitionMs=800`.
 
-### Selection rules (`uRules.pas`)
+### Selection rules (`MyScreenSaver_Rules.pas`)
 
 `random` (default), `onthisday` ("on this day" in previous years, date from EXIF or the file),
 `location` (taken within a radius of the current place; the place is set in the settings or detected by IP).
@@ -266,7 +285,7 @@ starts only when all were shown. "On this day" and "near the place" show their f
 already shown.
 A new rule is a descendant of `TMediaRule` plus a registration in `initialization`.
 
-### Languages (`uLang.pas`)
+### Languages (`MyScreenSaver_Lang.pas`)
 
 All interface texts are given as a pair `L('русский', 'English')`. The place name in the file information
 is requested (OpenStreetMap Nominatim) in the selected language.

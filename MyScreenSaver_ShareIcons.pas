@@ -1,4 +1,4 @@
-﻿unit uShareIcons;
+﻿unit MyScreenSaver_ShareIcons;
 
 { Icons of the share buttons: e-mail, Telegram, WhatsApp, Facebook, copy image / full path / file name.
   They are drawn by the program in a 96 x 96 design space: every icon is painted 8 times bigger than it is

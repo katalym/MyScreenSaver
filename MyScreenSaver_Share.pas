@@ -1,4 +1,4 @@
-﻿unit uShare;
+﻿unit MyScreenSaver_Share;
 
 { Sharing of the current media file: e-mail (MAPI with attachment) and messengers / social
   networks (the file is put on the clipboard and the messenger is opened - paste it there). }
@@ -18,7 +18,7 @@ procedure ShareFile(ATarget: TShareTarget; const AFileName: string);
 implementation
 
 uses
-  Winapi.Windows, Winapi.ShellAPI, Winapi.ShlObj, Winapi.Messages, System.SysUtils, Vcl.Clipbrd, uLang;
+  Winapi.Windows, Winapi.ShellAPI, Winapi.ShlObj, Winapi.Messages, System.SysUtils, Vcl.Clipbrd, MyScreenSaver_Lang;
 
 type
   TMapiFileDesc = record

@@ -1,4 +1,4 @@
-﻿unit uRules;
+﻿unit MyScreenSaver_Rules;
 
 { Selection rules and the picker. To add a rule: descend from TMediaRule, implement it and
   register it in the initialization section. }
@@ -6,7 +6,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults, uConfig, uMedia;
+  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults, MyScreenSaver_Config, MyScreenSaver_Media;
 
 type
   TMediaRule = class abstract
@@ -28,7 +28,7 @@ function PickMedia(ACatalog: TMediaCatalog; out AItem: TMediaItem): Boolean;
 implementation
 
 uses
-  System.DateUtils, System.StrUtils, uLocation, uLang;
+  System.DateUtils, System.StrUtils, MyScreenSaver_Location, MyScreenSaver_Lang;
 
 type
   TRandomRule = class(TMediaRule)

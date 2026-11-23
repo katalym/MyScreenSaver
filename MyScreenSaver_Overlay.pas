@@ -1,4 +1,4 @@
-﻿unit uOverlay;
+﻿unit MyScreenSaver_Overlay;
 
 { The overlay: a small semi-transparent window with text (selected fields of the current photo or video)
   that lies over the image. It is a separate top-level window owned by the viewer (a video is shown in
@@ -8,7 +8,7 @@
 interface
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.Types, System.Math, Vcl.Controls, Vcl.Forms, Vcl.Graphics, uConfig;
+  Winapi.Windows, System.SysUtils, System.Classes, System.Types, System.Math, Vcl.Controls, Vcl.Forms, Vcl.Graphics, MyScreenSaver_Config;
 
 type
   TOverlayWindow = class(TForm)

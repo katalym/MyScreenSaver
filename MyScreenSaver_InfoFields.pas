@@ -1,4 +1,4 @@
-﻿unit uInfoFields;
+﻿unit MyScreenSaver_InfoFields;
 
 { Fields of the information dialog (key I): which ones are shown is configurable. }
 
@@ -17,7 +17,7 @@ function OverlayFieldOn(const AId: string): Boolean;
 implementation
 
 uses
-  System.SysUtils, uConfig, uLang;
+  System.SysUtils, MyScreenSaver_Config, MyScreenSaver_Lang;
 
 function InfoFieldIds: TArray<string>;
 begin

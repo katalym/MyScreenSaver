@@ -1,4 +1,4 @@
-﻿unit uViewer;
+﻿unit MyScreenSaver_Viewer;
 
 { Full-screen / windowed media viewer. Built in code (no .dfm). }
 
@@ -7,7 +7,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Generics.Collections,
   Vcl.Controls, Vcl.Forms, Vcl.Clipbrd, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Buttons, Vcl.Graphics, Vcl.Menus, Vcl.Imaging.pngimage,
-  WMPLib, uConfig, uMedia, uSlideView, uOverlay, uShareDialog;
+  WMPLib, MyScreenSaver_Config, MyScreenSaver_Media, MyScreenSaver_SlideView, MyScreenSaver_Overlay, MyScreenSaver_ShareDialog, MyScreenSaver_InfoDialog;
 
 type
   TViewerMode = (vmStandalone, vmScreenSaver);
@@ -32,18 +32,28 @@ type
     FPlayer: TWindowsMediaPlayer;
     FStatus: TLabel;         // centered message (no collections / no files / loading)
     FPauseBar: TPanel;       // "Paused" badge at the bottom, above the video window too
-    FInfoPanel: TPanel;      // gray frame
-    FInfoInner: TPanel;      // dark background of the text
+    FSoundBar: TPanel;       // "Sound is off" badge at the bottom while a muted video plays (or a short notice after S)
+    FSoundTimer: TTimer;     // ends the short notice
+    FSoundNotice: string;    // the short notice (sound switched with the key S)
+    FInfoForm: TInfoForm;    // the information dialog (MyScreenSaver_InfoDialog.pas / .dfm): a window with a caption, it can be moved to another monitor
+    FInfoPosSet: Boolean;    // the user has moved it: it opens at the same place the next time
+    FInfoPos: TPoint;
     FShareBtn: TButton;      // opens the share dialog
     FDeleteBtn: TButton;     // deletes the file
     FCloseBtn: TButton;      // closes the information dialog
     FInfoText: TMemo;        // read-only: text can be selected and copied
     FCacheLabel: TLabel;     // state of the cache, below the text and above the buttons
+    FSepText: TBevel;        // a line between the information about the file and the cache line
+    FSepButtons: TBevel;     // a line between the cache line and the buttons
     FOpenCacheBtn: TSpeedButton;   // the buttons at the right end of the cache line (speed buttons: no tab stop)
     FClearShownBtn: TSpeedButton;
     FClearAllBtn: TSpeedButton;
     FTimer: TTimer;
     FNoticeTimer: TTimer;    // shows the "cache was cleared" message when the window is ready
+    FPointerTimer: TTimer;   // standalone viewer: hides the mouse pointer 1 second after it stopped moving
+    FPointerHidden: Boolean;
+    FPointerPos: TPoint;
+    FPointerMoved: UInt64;   // when the pointer moved the last time (GetTickCount64)
     FPaused: Boolean;
     FInfoShown: Boolean;
     FBusy: Boolean;
@@ -64,6 +74,8 @@ type
     procedure StartScan;
     procedure CacheResetNotice;
     procedure NoticeTimerTick(Sender: TObject);
+    procedure PointerTimerTick(Sender: TObject);
+    procedure HidePointer(AHide: Boolean);
     procedure StopScan;
     procedure AppMessage(var Msg: TMsg; var Handled: Boolean);
     function HandleKey(AKey: Word; ARepeat: Boolean): Boolean;
@@ -96,16 +108,18 @@ type
     procedure ArmTimer;
     procedure CenterStatus;
     procedure SetPauseBar(AVisible: Boolean);
+    procedure UpdateSoundBar;
+    procedure ToggleSound;
+    procedure SoundTimerTick(Sender: TObject);
     function HasEnabledCollection: Boolean;
     procedure TogglePause;
     procedure ToggleInfo;
     procedure HideInfo;
+    procedure InfoFormClose(Sender: TObject; var Action: TCloseAction);
     procedure ShowInfoPanel(const AText: string);
     procedure InfoDblClick(Sender: TObject);
     function BuildInfo: string;
-    procedure CreateInfoButtons;
     function CacheStateText: string;
-    function NewCacheButton(AOnClick: TNotifyEvent): TSpeedButton;
     procedure OpenCacheClick(Sender: TObject);
     procedure ClearShownClick(Sender: TObject);
     procedure ClearAllClick(Sender: TObject);
@@ -136,8 +150,8 @@ implementation
 {$R *.DFM}
 
 uses
-  System.IOUtils, System.DateUtils, System.StrUtils, System.Math, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
-  Winapi.Wincodec, Winapi.ShellAPI, uVersion, uLang, uInfoFields, uLocation, uRules, uExif, uShare, uSettingsForm;
+  System.IOUtils, System.DateUtils, System.StrUtils, System.Math, System.Types, Vcl.Imaging.jpeg, Vcl.Imaging.GIFImg,
+  Winapi.Wincodec, Winapi.ShellAPI, Vcl.Dialogs, MyScreenSaver_Version, MyScreenSaver_Lang, MyScreenSaver_InfoFields, MyScreenSaver_Location, MyScreenSaver_Rules, MyScreenSaver_Exif, MyScreenSaver_Share, MyScreenSaver_SettingsForm;
 
 var
   GViewer: TViewerForm;   // for the callbacks of background threads (never a dangling Self)
@@ -185,6 +199,52 @@ begin
   if MatchText(LowerCase(ExtractFileExt(APath)), ['.jpg', '.jpeg', '.jfif']) then
     vOrient := ReadExif(APath).Orientation;
   LoadOrientedPicture(APicture, APath, vOrient);
+end;
+
+type
+  { the keys of the yes / no question: Y and N without Alt }
+  TAskKeys = class
+    class procedure KeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+  end;
+
+class procedure TAskKeys.KeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if (Shift = []) and (Sender is TForm) then
+    case Key of
+      Ord('Y'): TForm(Sender).ModalResult := mrYes;
+      Ord('N'): TForm(Sender).ModalResult := mrNo;
+    end;
+end;
+
+{ A yes / no question with accelerators on the buttons: Alt+Y / Alt+N (the underlined letters; Y and N alone work as
+  well); ADefaultYes: which button is the default (Enter). The captions follow the language of the application. }
+function AskYesNo(const AText, ATitle: string; ADefaultYes: Boolean): Boolean;
+var
+  vDlg: TForm;
+  vBtn: TButton;
+  vDefault: TMsgDlgBtn;
+begin
+  if ADefaultYes then
+    vDefault := mbYes
+  else
+    vDefault := mbNo;
+  vDlg := CreateMessageDialog(AText, mtConfirmation, [mbYes, mbNo], vDefault);
+  try
+    vDlg.Caption := ATitle;
+    vDlg.Position := poMainFormCenter;
+    vDlg.KeyPreview := True;
+    vDlg.OnKeyDown := TAskKeys.KeyDown;
+    ShowAccelerators(vDlg);
+    vBtn := TButton(vDlg.FindComponent('Yes'));
+    if vBtn <> nil then
+      vBtn.Caption := L('Да (&Y)', '&Yes');
+    vBtn := TButton(vDlg.FindComponent('No'));
+    if vBtn <> nil then
+      vBtn.Caption := L('Нет (&N)', '&No');
+    Result := vDlg.ShowModal = mrYes;
+  finally
+    vDlg.Free;
+  end;
 end;
 
 { TViewerForm }
@@ -259,40 +319,43 @@ begin
   FPauseBar.Height := 48;
   FPauseBar.Visible := False;
 
-  FInfoPanel := TPanel.Create(Self);
-  FInfoPanel.Parent := Self;
-  FInfoPanel.BevelOuter := bvNone;
-  FInfoPanel.ParentBackground := False;
-  FInfoPanel.Color := clGray;
-  FInfoPanel.Visible := False;
-  FInfoInner := TPanel.Create(Self);
-  FInfoInner.Parent := FInfoPanel;
-  FInfoInner.BevelOuter := bvNone;
-  FInfoInner.ParentBackground := False;
-  FInfoInner.Color := $202020;
-  FInfoText := TMemo.Create(Self);
-  FInfoText.Parent := FInfoInner;
-  FInfoText.BorderStyle := bsNone;
-  FInfoText.ReadOnly := True;
-  FInfoText.ScrollBars := ssNone;
-  FInfoText.Color := $202020;
-  FInfoText.Font.Color := clWhite;
-  FInfoText.Font.Name := 'Consolas';
-  FInfoText.Font.Size := 11;
-  FInfoText.Cursor := crIBeam;
-  FInfoText.WordWrap := True;
+  FSoundBar := TPanel.Create(Self);
+  FSoundBar.Parent := Self;
+  FSoundBar.BevelOuter := bvNone;
+  FSoundBar.ParentBackground := False;
+  FSoundBar.Color := $303030;
+  FSoundBar.Font.Size := 16;
+  FSoundBar.Font.Color := clWhite;
+  FSoundBar.Height := 48;
+  FSoundBar.Visible := False;
+  FSoundTimer := TTimer.Create(Self);
+  FSoundTimer.Enabled := False;
+  FSoundTimer.Interval := 2000;
+  FSoundTimer.OnTimer := SoundTimerTick;
+
+  // the information dialog is a form of its own (MyScreenSaver_InfoDialog.dfm); its controls get the events here
+  FInfoForm := TInfoForm.Create(Self);
+  FInfoForm.PopupParent := Self;
+  FInfoForm.OnClose := InfoFormClose;
+  if FMode = vmScreenSaver then
+    FInfoForm.FormStyle := fsStayOnTop;   // above the full-screen screensaver
+  FInfoText := FInfoForm.memText;
   FInfoText.OnDblClick := InfoDblClick;
-  FCacheLabel := TLabel.Create(Self);
-  FCacheLabel.Parent := FInfoInner;
-  FCacheLabel.Font.Name := 'Segoe UI';
-  FCacheLabel.Font.Size := 9;
-  FCacheLabel.Font.Color := clSilver;
-  FCacheLabel.AutoSize := False;
-  FCacheLabel.Transparent := True;
-  FOpenCacheBtn := NewCacheButton(OpenCacheClick);
-  FClearShownBtn := NewCacheButton(ClearShownClick);
-  FClearAllBtn := NewCacheButton(ClearAllClick);
-  CreateInfoButtons;
+  FSepText := FInfoForm.bvlText;
+  FSepButtons := FInfoForm.bvlButtons;
+  FCacheLabel := FInfoForm.lblCache;
+  FOpenCacheBtn := FInfoForm.btnOpenCache;
+  FOpenCacheBtn.OnClick := OpenCacheClick;
+  FClearShownBtn := FInfoForm.btnClearShown;
+  FClearShownBtn.OnClick := ClearShownClick;
+  FClearAllBtn := FInfoForm.btnClearAll;
+  FClearAllBtn.OnClick := ClearAllClick;
+  FShareBtn := FInfoForm.btnShare;
+  FShareBtn.OnClick := ShareButtonClick;
+  FDeleteBtn := FInfoForm.btnDelete;
+  FDeleteBtn.OnClick := DeleteButtonClick;
+  FCloseBtn := FInfoForm.btnClose;
+  FCloseBtn.OnClick := CloseButtonClick;
 
   FTimer := TTimer.Create(Self);
   FTimer.Enabled := False;
@@ -301,14 +364,55 @@ begin
   FNoticeTimer.Enabled := False;
   FNoticeTimer.Interval := 500;
   FNoticeTimer.OnTimer := NoticeTimerTick;
+  if FMode = vmStandalone then
+  begin
+    GetCursorPos(FPointerPos);
+    FPointerMoved := GetTickCount64;
+    FPointerTimer := TTimer.Create(Self);
+    FPointerTimer.Interval := 100;
+    FPointerTimer.OnTimer := PointerTimerTick;   // enabled at once: the pointer is hidden when it rests
+  end;
 
   Application.OnMessage := AppMessage;
   OnCatalogCacheReset := CacheResetNotice;
   StartScan;
 end;
 
+{ ShowCursor counts the calls and hides the pointer over all windows of this thread (the video window and the
+  dialogs as well), so every hide is paired with a show. }
+procedure TViewerForm.HidePointer(AHide: Boolean);
+begin
+  if AHide = FPointerHidden then
+    Exit;
+  ShowCursor(not AHide);
+  FPointerHidden := AHide;
+end;
+
+{ The standalone viewer: the pointer is hidden 1 second after it stopped moving and shown again when it moves. It is
+  always visible while a dialog is open (the information dialog, a question, the settings...). }
+procedure TViewerForm.PointerTimerTick(Sender: TObject);
+var
+  vPt: TPoint;
+begin
+  GetCursorPos(vPt);
+  if (vPt.X <> FPointerPos.X) or (vPt.Y <> FPointerPos.Y) then
+  begin
+    FPointerPos := vPt;
+    FPointerMoved := GetTickCount64;
+    HidePointer(False);
+  end
+  else if FBusy or FInfoShown then
+  begin
+    FPointerMoved := GetTickCount64;   // it is hidden 1 second after the dialog is closed
+    HidePointer(False);
+  end
+  else if GetTickCount64 - FPointerMoved >= 1000 then
+    HidePointer(True);
+end;
+
 destructor TViewerForm.Destroy;
 begin
+  HidePointer(False);
   GViewer := nil;
   OnCatalogCacheReset := nil;
   FreeAndNil(FOverlay);
@@ -336,6 +440,7 @@ end;
 procedure TViewerForm.DoShow;
 begin
   inherited;
+  ShowAccelerators(Self);   // the underlined letters of the buttons of the information dialog
   GetCursorPos(FStartPt);
   if FMode = vmScreenSaver then
     CreateBlankForms
@@ -444,7 +549,8 @@ begin
   if FBusy then
     Exit;
   if FMode = vmStandalone then
-    if (Msg.hwnd <> Handle) and not IsChild(Handle, Msg.hwnd) then
+    if (Msg.hwnd <> Handle) and not IsChild(Handle, Msg.hwnd) and
+      not (FInfoShown and ((Msg.hwnd = FInfoForm.Handle) or IsChild(FInfoForm.Handle, Msg.hwnd))) then
       Exit;
 
   case Msg.message of
@@ -487,6 +593,19 @@ end;
 function TViewerForm.HandleKey(AKey: Word; ARepeat: Boolean): Boolean;
 begin
   Result := True;
+  // the information dialog: S = Share, D = Delete, C = Close (also Alt+S / Alt+D / Alt+C: the underlined letters of the
+  // captions, "&Share"); Ctrl+C copies the text and is handled before, other combinations with Ctrl / Alt are not shortcuts
+  if FInfoShown and (GetKeyState(VK_CONTROL) >= 0) and (GetKeyState(VK_MENU) >= 0) and
+    ((AKey = Ord('S')) or (AKey = Ord('D')) or (AKey = Ord('C'))) then
+  begin
+    if not ARepeat then
+      case AKey of
+        Ord('S'): ShareButtonClick(FShareBtn);
+        Ord('D'): if FDeleteBtn.Enabled then DeleteButtonClick(FDeleteBtn);
+        Ord('C'): CloseButtonClick(FCloseBtn);
+      end;
+    Exit;
+  end;
   case AKey of
     VK_ESCAPE:
       if FInfoShown then
@@ -516,6 +635,9 @@ begin
     Ord('I'):
       if not ARepeat then
         ToggleInfo;
+    Ord('S'):
+      if not ARepeat then
+        ToggleSound;   // the sound of the videos on / off, remembered; in the screensaver mode too (it does not end it)
     Ord('C'):
       if (FMode = vmStandalone) and not ARepeat then
         OpenSettings
@@ -645,17 +767,39 @@ end;
 { Esc in the standalone viewer: a question, "Yes" is the default (Enter). }
 procedure TViewerForm.ConfirmExit;
 var
-  vYes: Boolean;
+  vYes, vWasPaused: Boolean;
 begin
+  // the slideshow stands still while the question is open: the files do not change and the video does not play
+  vWasPaused := FPaused;
+  if not vWasPaused then
+  begin
+    FPaused := True;   // also keeps the end of a video from starting the next file
+    FTimer.Enabled := False;
+    if FHasCurrent and (FCurrentItem.Kind = mkVideo) then
+      FPlayer.controls.pause;
+  end;
   FBusy := True;   // the keys belong to the question
   try
-    vYes := Application.MessageBox(PChar(L('Закрыть приложение?', 'Close the application?')),
-      PChar(Caption), MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON1) = IDYES;
+    vYes := AskYesNo(L('Закрыть приложение?', 'Close the application?'), Caption, True);
   finally
     FBusy := False;
   end;
   if vYes then
+  begin
     Close;
+    Exit;
+  end;
+  if vWasPaused then
+    Exit;   // it was paused by the user: it stays paused
+  FPaused := False;   // "No": the slideshow goes on
+  if FHasCurrent and (FCurrentItem.Kind = mkVideo) then
+  begin
+    FPlayer.controls.play;
+    FTimer.Interval := 6 * 60 * 60 * 1000;   // the safety net of a video, as in StartVideo
+    FTimer.Enabled := True;
+  end
+  else
+    ArmTimer;
 end;
 
 procedure TViewerForm.GoNext;
@@ -718,6 +862,7 @@ begin
   FVideoHost.Visible := False;
   FPendingVideo := '';
   FView.Clear;
+  FSoundBar.Visible := False;
   FStatus.Caption := AText;
   CenterStatus;
   FStatus.Visible := True;
@@ -743,6 +888,61 @@ begin
   end
   else
     FPauseBar.Visible := False;
+  if FSoundBar <> nil then
+    UpdateSoundBar;   // it stands above the pause badge
+end;
+
+{ The badge at the bottom: "Sound is off" while a video is visible and the sound is off, or the short notice after
+  the key S. It is not shown with the information dialog; above the pause badge when that is shown. }
+procedure TViewerForm.UpdateSoundBar;
+var
+  vText: string;
+begin
+  vText := FSoundNotice;
+  if (vText = '') and FHasCurrent and (FCurrentItem.Kind = mkVideo) and FCurrentShown and Settings.SilentVideo then
+    vText := L('Звук выключен', 'Sound is off');
+  if FInfoShown or (vText = '') then
+  begin
+    FSoundBar.Visible := False;
+    Exit;
+  end;
+  FSoundBar.Caption := vText;
+  Canvas.Font.Assign(FSoundBar.Font);
+  FSoundBar.Width := Canvas.TextWidth(vText) + 60;
+  FSoundBar.Left := (ClientWidth - FSoundBar.Width) div 2;
+  FSoundBar.Top := ClientHeight - FSoundBar.Height - 40;
+  if FPauseBar.Visible then
+    FSoundBar.Top := FPauseBar.Top - FSoundBar.Height - 8;
+  FSoundBar.Visible := True;
+  FSoundBar.BringToFront;
+end;
+
+{ The key S: the videos play with or without sound (the setting "Play videos silently"), remembered. }
+procedure TViewerForm.ToggleSound;
+begin
+  Settings.SilentVideo := not Settings.SilentVideo;
+  Settings.Save;
+  if FHasCurrent and (FCurrentItem.Kind = mkVideo) and not FWaitingOpen then
+    FPlayer.settings.mute := Settings.SilentVideo;
+  FSoundTimer.Enabled := False;
+  if FHasCurrent and (FCurrentItem.Kind = mkVideo) and FCurrentShown then
+    FSoundNotice := ''   // a video is playing: the badge "Sound is off" is there while it is muted and gone when it is on
+  else
+  begin
+    // no video on the screen: a short notice, so that the key is seen to work
+    FSoundNotice := IfThen(Settings.SilentVideo,
+      L('Звук при показе видео выключен', 'Sound for playing videos is turned off'),
+      L('Звук при показе видео включён', 'Sound for playing videos is turned on'));
+    FSoundTimer.Enabled := True;
+  end;
+  UpdateSoundBar;
+end;
+
+procedure TViewerForm.SoundTimerTick(Sender: TObject);
+begin
+  FSoundTimer.Enabled := False;
+  FSoundNotice := '';
+  UpdateSoundBar;
 end;
 
 function TViewerForm.HasEnabledCollection: Boolean;
@@ -815,6 +1015,7 @@ begin
     FAppendHistory := False;
   end;
   FCurrentShown := AItem.Kind = mkPhoto;   // a video counts when it becomes visible (StartVideo / CheckVideoSize)
+  UpdateSoundBar;
 end;
 
 { The running transition was cancelled: the old photo is on the screen again. It is the current file, and the
@@ -916,6 +1117,7 @@ begin
   // (see CheckVideoSize): a too large video is stopped and skipped, the others become visible.
   FWaitingOpen := Settings.SkipLargeVideos;
   FCurrentShown := not FWaitingOpen;
+  UpdateSoundBar;
   FPlayer.Visible := not FWaitingOpen;
   FPlayer.settings.mute := FWaitingOpen or Settings.SilentVideo;
   FPlayer.settings.autoStart := True;
@@ -958,6 +1160,8 @@ begin
     CenterStatus;
   if (FPauseBar <> nil) and FPauseBar.Visible then
     SetPauseBar(True);
+  if FSoundBar <> nil then
+    UpdateSoundBar;
   if FOverlay <> nil then
     FOverlay.Refit;
 end;
@@ -994,6 +1198,7 @@ begin
   end;
   FSkips := 0;
   FCurrentShown := True;
+  UpdateSoundBar;
   FPlayer.settings.mute := Settings.SilentVideo;
   FPlayer.Visible := True;
   FitVideo;
@@ -1019,7 +1224,7 @@ end;
 
 procedure TViewerForm.PlayerError(Sender: TObject);
 begin
-  if FHasCurrent then
+  if FHasCurrent and not FPaused then
   begin
     FTimer.Enabled := False;
     FTimer.Interval := 50;
@@ -1123,87 +1328,35 @@ begin
   FInfoText.SelLength := Length(TrimRight(vText)) - (vVal - 1);
 end;
 
-{ Shows the info text in a panel exactly as big as the text, centered on the screen. }
+{ Shows the information dialog: the texts of its controls, the size from its content (Arrange of MyScreenSaver_InfoDialog), the
+  position (in the middle of the viewer the first time, later where the user left it), and the focus on the text. }
 procedure TViewerForm.ShowInfoPanel(const AText: string);
-const
-  Pad = 28;
-  Border = 2;
-  BtnH = 25;   // the default height of the buttons
-var
-  vSl: TStringList;
-  vMaxW, vCap, vHeight, vLineH, i, vBtnW, vDelW, vCloseW, vContentW, vY, vCacheW, vOpenW, vShownW, vAllW, vBtnGap: Integer;
-  vRect: TRect;
 begin
   FInfoText.Font.Name := Settings.InfoFontName;   // configurable
   FInfoText.Font.Size := Settings.InfoFontSize;
-  Canvas.Font.Assign(FInfoText.Font);
-  vLineH := Canvas.TextHeight('Wg');
-  vSl := TStringList.Create;
-  try
-    vSl.Text := AText.TrimRight;
-    vMaxW := 0;
-    for i := 0 to vSl.Count - 1 do
-      vMaxW := Max(vMaxW, Canvas.TextWidth(vSl[i]));
-    vCap := ClientWidth - 2 * Pad - 80;
-    vMaxW := Min(vMaxW + 6, vCap);
-    // height from the text itself (long lines wrap): independent of the state of the memo window
-    vHeight := 0;
-    for i := 0 to vSl.Count - 1 do
-    begin
-      if vSl[i] = '' then
-        Inc(vHeight, vLineH)
-      else
-      begin
-        vRect := Rect(0, 0, vMaxW, 0);
-        DrawText(Canvas.Handle, PChar(vSl[i]), -1, vRect,
-          DT_CALCRECT or DT_WORDBREAK or DT_NOPREFIX or DT_EXPANDTABS);
-        Inc(vHeight, Max(vLineH, vRect.Bottom));
-      end;
-    end;
-  finally
-    vSl.Free;
-  end;
   // three buttons below the text: Share (the share dialog with the actions), Delete (only for the files
   // of this computer or of the network) and Close at the right edge
-  FShareBtn.Caption := L('Поделиться...', 'Share...');
-  FDeleteBtn.Caption := L('Удалить', 'Delete');
+  FShareBtn.Caption := L('Поделиться... (&S)', '&Share...');   // &: the underlined letter, Alt+S
+  FDeleteBtn.Caption := L('Удалить (&D)', '&Delete');
   FDeleteBtn.Enabled := FCurrentItem.SourceKind in [skLocal, skNetwork];
-  FCloseBtn.Caption := L('Закрыть', 'Close');
-  Canvas.Font.Assign(FShareBtn.Font);
-  vBtnW := Canvas.TextWidth(FShareBtn.Caption) + 44;
-  vDelW := Canvas.TextWidth(FDeleteBtn.Caption) + 44;
-  vCloseW := Canvas.TextWidth(FCloseBtn.Caption) + 44;
+  FCloseBtn.Caption := L('Закрыть (&C)', '&Close');
   FCacheLabel.Caption := CacheStateText;
   FOpenCacheBtn.Caption := L('Открыть кэш', 'Open Cache');
   FClearShownBtn.Caption := L('Сбросить показанные', 'Clear shown');
   FClearAllBtn.Caption := L('Очистить всё', 'Clear all');
-  Canvas.Font.Assign(FCacheLabel.Font);
-  vCacheW := Canvas.TextWidth(FCacheLabel.Caption);
-  vBtnGap := 4;
-  vOpenW := Canvas.TextWidth(FOpenCacheBtn.Caption) + 20;
-  vShownW := Canvas.TextWidth(FClearShownBtn.Caption) + 20;
-  vAllW := Canvas.TextWidth(FClearAllBtn.Caption) + 20;
-  vContentW := Max(Max(vMaxW, vBtnW + 2 * vDelW + vCloseW + 48),
-    vCacheW + 24 + vOpenW + vShownW + vAllW + 2 * vBtnGap);
-
-  FInfoText.Text := AText.TrimRight;
-  FInfoText.SetBounds(Pad, Pad, vContentW, vHeight + 4);
-  FInfoText.HandleNeeded;
-  FInfoText.Perform(EM_SETMARGINS, EC_LEFTMARGIN or EC_RIGHTMARGIN, 0);
-  FCacheLabel.SetBounds(Pad, Pad + vHeight + 4 + 12, vCacheW + 4, Canvas.TextHeight('Wg') + 2);
-  FClearAllBtn.SetBounds(Pad + vContentW - vAllW, FCacheLabel.Top - 3, vAllW, FCacheLabel.Height + 6);
-  FClearShownBtn.SetBounds(FClearAllBtn.Left - vBtnGap - vShownW, FClearAllBtn.Top, vShownW, FClearAllBtn.Height);
-  FOpenCacheBtn.SetBounds(FClearShownBtn.Left - vBtnGap - vOpenW, FClearAllBtn.Top, vOpenW, FClearAllBtn.Height);
-  vY := FCacheLabel.Top + FCacheLabel.Height + 14;
-  FShareBtn.SetBounds(Pad, vY, vBtnW, BtnH);
-  FDeleteBtn.SetBounds(Pad + vBtnW + vDelW, vY, vDelW, BtnH);   // a gap of its own width after Share
-  FCloseBtn.SetBounds(Pad + vContentW - vCloseW, vY, vCloseW, BtnH);   // Close: the right edge
-  FInfoInner.SetBounds(Border, Border, vContentW + 2 * Pad, vY + BtnH + Pad);
-  FInfoPanel.SetBounds(0, 0, FInfoInner.Width + 2 * Border, FInfoInner.Height + 2 * Border);
-  FInfoPanel.Left := (ClientWidth - FInfoPanel.Width) div 2;
-  FInfoPanel.Top := (ClientHeight - FInfoPanel.Height) div 2;
-  FInfoPanel.Visible := True;
-  FInfoPanel.BringToFront;
+  FInfoForm.Arrange(AText, ClientWidth - 2 * 16 - 80);
+  FInfoForm.Caption := L('Информация', 'Information');
+  ShowAccelerators(FInfoForm);
+  if FInfoPosSet and (Screen.MonitorFromPoint(Point(FInfoPos.X + FInfoForm.Width div 2, FInfoPos.Y + FInfoForm.Height div 2),
+    mdNull) <> nil) then
+  begin
+    FInfoForm.Position := poDesigned;
+    FInfoForm.Left := FInfoPos.X;
+    FInfoForm.Top := FInfoPos.Y;
+  end
+  else
+    FInfoForm.Position := poOwnerFormCenter;
+  FInfoForm.Show;
   if FMode = vmScreenSaver then
     Screen.Cursor := crDefault;   // the mouse is needed to select text
   FInfoText.SelStart := 0;
@@ -1212,12 +1365,22 @@ begin
     FInfoText.SetFocus;
 end;
 
+{ The close button of the caption of the information dialog: the same as the button Close. }
+procedure TViewerForm.InfoFormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  Action := caHide;
+  HideInfo;
+end;
+
 procedure TViewerForm.HideInfo;
 begin
   if not FInfoShown then
     Exit;
   FInfoShown := False;
-  FInfoPanel.Visible := False;
+  FInfoPos := Point(FInfoForm.Left, FInfoForm.Top);   // remembered for the next time
+  FInfoPosSet := True;
+  FInfoForm.Hide;
+  UpdateSoundBar;
   UpdateOverlay;
   if FMode = vmScreenSaver then
   begin
@@ -1505,18 +1668,6 @@ begin
      IfThen(vSt.Scanning, L('идёт обновление', 'updating'), L('актуален', 'up to date'))]);
 end;
 
-{ A flat speed button: it is not a window, so it never takes the focus and has no tab stop. }
-function TViewerForm.NewCacheButton(AOnClick: TNotifyEvent): TSpeedButton;
-begin
-  Result := TSpeedButton.Create(Self);
-  Result.Parent := FInfoInner;
-  Result.Flat := True;
-  Result.Font.Name := 'Segoe UI';
-  Result.Font.Size := 9;
-  Result.Font.Color := $F0B060;
-  Result.OnClick := AOnClick;
-end;
-
 { Opens the folder with the cache files in Explorer. }
 procedure TViewerForm.OpenCacheClick(Sender: TObject);
 begin
@@ -1535,9 +1686,9 @@ procedure TViewerForm.ClearAllClick(Sender: TObject);
 begin
   FBusy := True;
   try
-    if Application.MessageBox(PChar(L('Очистить весь кэш (список файлов, дата и GPS, показанные) и просканировать ' +
-      'папки заново?', 'Clear the whole cache (file list, date and GPS, shown files) and scan the folders again?')),
-      PChar(L('Кэш', 'Cache')), MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON2) <> IDYES then
+    if not AskYesNo(L('Очистить весь кэш (список файлов, дата и GPS, показанные) и просканировать ' +
+      'папки заново?', 'Clear the whole cache (file list, date and GPS, shown files) and scan the folders again?'),
+      L('Кэш', 'Cache'), False) then
       Exit;
   finally
     FBusy := False;
@@ -1548,41 +1699,26 @@ begin
   FCacheLabel.Caption := CacheStateText;
 end;
 
-procedure TViewerForm.CreateInfoButtons;
-begin
-  FShareBtn := TButton.Create(Self);
-  FShareBtn.Parent := FInfoInner;
-  FShareBtn.Font.Name := 'Segoe UI';
-  FShareBtn.Font.Size := 10;
-  FShareBtn.OnClick := ShareButtonClick;
-  FDeleteBtn := TButton.Create(Self);
-  FDeleteBtn.Parent := FInfoInner;
-  FDeleteBtn.Font.Name := 'Segoe UI';
-  FDeleteBtn.Font.Size := 10;
-  FDeleteBtn.OnClick := DeleteButtonClick;
-  FCloseBtn := TButton.Create(Self);
-  FCloseBtn.Parent := FInfoInner;
-  FCloseBtn.Font.Name := 'Segoe UI';
-  FCloseBtn.Font.Size := 10;
-  FCloseBtn.OnClick := CloseButtonClick;
-end;
-
 { The only button of the information dialog: the share dialog with the actions that are possible for the file. }
 procedure TViewerForm.ShareButtonClick(Sender: TObject);
 var
-  vActions: TShareActions;
+  vActions, vDisabled: TShareActions;
   vAction: TShareAction;
   vChosen: Boolean;
 begin
   vActions := [];
+  vDisabled := [];
   if (FCurrentPath <> '') and FileExists(FCurrentPath) then
     vActions := vActions + [saEmail, saTelegram, saWhatsApp, saFacebook];
-  if (FCurrentItem.Kind = mkPhoto) and FView.HasPicture then
-    Include(vActions, saCopyImage);
-  vActions := vActions + [saCopyPath, saCopyName];
+  vActions := vActions + [saCopyImage, saCopyPath, saCopyName];
+  if not ((FCurrentItem.Kind = mkPhoto) and FView.HasPicture) then
+    Include(vDisabled, saCopyImage);   // "Copy image" is shown, but only a photo can be copied (not a video)
   FBusy := True;
   try
-    vChosen := ShowShareDialog(Self, FCurrentItem.DisplayName, vActions, vAction);
+    if FInfoShown then
+      vChosen := ShowShareDialog(FInfoForm, FCurrentItem.DisplayName, vActions, vDisabled, vAction)
+    else
+      vChosen := ShowShareDialog(Self, FCurrentItem.DisplayName, vActions, vDisabled, vAction);
   finally
     FBusy := False;
   end;
@@ -1649,8 +1785,8 @@ begin
     vMsg := L('Файл будет перемещён в корзину.', 'The file will be moved to the Recycle Bin.');
   FBusy := True;
   try
-    if Application.MessageBox(PChar(L('Удалить файл?', 'Delete the file?') + #13#10#13#10 + vItem.Location +
-      #13#10#13#10 + vMsg), PChar(L('Удаление', 'Delete')), MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON2) <> IDYES then
+    if not AskYesNo(L('Удалить файл?', 'Delete the file?') + #13#10#13#10 + vItem.Location +
+      #13#10#13#10 + vMsg, L('Удаление', 'Delete'), False) then
       Exit;
   finally
     FBusy := False;

@@ -1,4 +1,4 @@
-﻿unit uMedia;
+﻿unit MyScreenSaver_Media;
 
 { Media catalog: scanning of local/network/HTTP/FTP collections, local cache for remote files,
   metadata (date, GPS) with in-memory cache. }
@@ -6,7 +6,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults, System.SyncObjs, uConfig;
+  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults, System.SyncObjs, MyScreenSaver_Config;
 
 type
   TMediaKind = (mkPhoto, mkVideo);
@@ -158,7 +158,7 @@ procedure MarkShown(const ALocation: string);   // the counter + 1
 { The counters are deleted: nothing was shown. }
 procedure ResetShown;
 function ShownCount: Integer;                   // files that were shown at least once
-{ The random order shows the files whose counter is not above this level first (see uRules). }
+{ The random order shows the files whose counter is not above this level first (see MyScreenSaver_Rules). }
 function ShownLevel: Integer;
 procedure SetShownLevel(ALevel: Integer);
 { Deletes both caches and the cached data (file list, date/GPS, places, shown counters).
@@ -170,7 +170,7 @@ implementation
 
 uses
   System.IOUtils, System.Math, System.StrUtils, System.Hash, System.NetEncoding, System.RegularExpressions, System.DateUtils,
-  System.Threading, System.Net.HttpClient, System.Net.URLClient, IdFTP, IdFTPList, IdFTPCommon, uExif, uLocation;
+  System.Threading, System.Net.HttpClient, System.Net.URLClient, IdFTP, IdFTPList, IdFTPCommon, MyScreenSaver_Exif, MyScreenSaver_Location;
 
 const
   PhotoExts: array[0..9] of string =
@@ -553,7 +553,7 @@ procedure ListHttpDir(const AColl: TMediaCollection; const AUrl: string;
   Version<TAB>number<TAB>photos=N<TAB>videos=N<TAB>hasdate=N<TAB>hasgps=N
   the second line has the names of the columns, then follows one record per file (the last line of a file wins):
   F<TAB>location<TAB>kind<TAB>has-date<TAB>date<TAB>has-GPS<TAB>lat<TAB>lon
-  (the place names are in places.cache, see uLocation)
+  (the place names are in places.cache, see MyScreenSaver_Location)
   A new file is first written as F<TAB>location<TAB>kind only (not indexed yet); the indexer adds the rest. }
 
 var

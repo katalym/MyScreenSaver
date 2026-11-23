@@ -1,11 +1,11 @@
-﻿unit uConfig;
+﻿unit MyScreenSaver_Config;
 
 { Application settings stored in an INI file (no database). }
 
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Generics.Collections, uLang;
+  System.SysUtils, System.Classes, System.Generics.Collections, MyScreenSaver_Lang;
 
 type
   TSourceKind = (skLocal, skNetwork, skHttp, skFtp);

@@ -1,4 +1,4 @@
-﻿unit uLocation;
+﻿unit MyScreenSaver_Location;
 
 { Geo helpers: distance and optional IP-based location detection. }
 
@@ -19,7 +19,7 @@ implementation
 
 uses
   System.SysUtils, System.Math, System.JSON, System.Net.HttpClient, System.Classes,
-  System.SyncObjs, System.Generics.Collections, System.IOUtils, uConfig;
+  System.SyncObjs, System.Generics.Collections, System.IOUtils, MyScreenSaver_Config;
 
 const
   PlacesCacheVersion = 1;   // version of the format of places.cache (the first line of the file)

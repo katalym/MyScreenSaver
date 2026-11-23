@@ -1,4 +1,4 @@
-﻿unit uSettingsForm;
+﻿unit MyScreenSaver_SettingsForm;
 
 { The settings dialog: one form with tabs, built in code (no .dfm). Shown for /c or the C key.
   Tabs: media collections (+ excluded folders), file types (+ sound), play (slideshow), information,
@@ -8,7 +8,7 @@ interface
 
 uses
   System.Classes, System.Generics.Collections, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls,
-  Vcl.ComCtrls, Vcl.CheckLst, uConfig, uLang;
+  Vcl.ComCtrls, Vcl.CheckLst, MyScreenSaver_Config, MyScreenSaver_Lang;
 
 type
   TSettingsForm = class(TForm)
@@ -137,13 +137,17 @@ type
 { Returns True if the settings were changed and saved. }
 function ShowSettingsDialog: Boolean;
 
+{ The underlined letters of the buttons (the shortcuts, "&Save") are always visible in the form, not only after Alt is
+  pressed (a Windows setting hides them). }
+procedure ShowAccelerators(AForm: TForm);
+
 implementation
 
 {$R *.DFM}
 
 uses
-  Winapi.Windows, System.SysUtils, System.Types, System.Math, Vcl.Graphics, Vcl.Dialogs,
-  uRules, uInfoFields, uVersion;
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Types, System.Math, Vcl.Graphics, Vcl.Dialogs,
+  MyScreenSaver_Rules, MyScreenSaver_InfoFields, MyScreenSaver_Version;
 
 
 function F2S(AValue: Double): string;
@@ -433,8 +437,8 @@ var
 begin
   Caption := Trim('MyScreenSaver ' + AppVersion) + L(' — настройки', ' — settings');
   FLangLabel.Caption := 'Язык / Language:';
-  FOk.Caption := L('Сохранить', 'Save');
-  FCancel.Caption := L('Отмена', 'Cancel');
+  FOk.Caption := L('&Сохранить', '&Save');   // & = the underlined letter (Alt+letter); the letters are different on every tab
+  FCancel.Caption := L('&Отмена', '&Cancel');
   FTabColl.Caption := L('Медиаколлекции', 'Media collections');
   FTabTypes.Caption := L('Фильтры', 'Filters');
   FTabPlay.Caption := L('Показ', 'Play');
@@ -443,14 +447,14 @@ begin
 
   // media collections
   FCollLabel.Caption := L('Медиаколлекции (отмеченные используются):', 'Media collections (checked are used):');
-  FCollAddFolder.Caption := L('Добавить папки...', 'Add folders...');
-  FCollAddUrl.Caption := L('Добавить адрес (UNC/HTTP/FTP)...', 'Add address (UNC/HTTP/FTP)...');
-  FCollRemove.Caption := L('Удалить', 'Remove');
+  FCollAddFolder.Caption := L('Добавить &папки...', 'Add &folders...');
+  FCollAddUrl.Caption := L('Добавить &адрес (UNC/HTTP/FTP)...', 'Add &address (UNC/HTTP/FTP)...');
+  FCollRemove.Caption := L('&Удалить', '&Remove');
   FExclLabel.Caption := L('Исключённые папки и подпапки (файлы в них не показываются):',
     'Excluded folders and subfolders (files in them are not shown):');
-  FExclAddFolder.Caption := L('Исключить папки...', 'Exclude folders...');
-  FExclAddUrl.Caption := L('Исключить адрес (UNC/HTTP/FTP)...', 'Exclude address (UNC/HTTP/FTP)...');
-  FExclRemove.Caption := L('Удалить', 'Remove');
+  FExclAddFolder.Caption := L('&Исключить папки...', '&Exclude folders...');
+  FExclAddUrl.Caption := L('Исключить а&дрес (UNC/HTTP/FTP)...', 'Exclude a&ddress (UNC/HTTP/FTP)...');
+  FExclRemove.Caption := L('Уда&лить', 'Re&move');
 
   // file types
   FGbShow.Caption := L('Что показывать', 'What to show');
@@ -511,8 +515,8 @@ begin
   // information
   FInfoHint.Caption := L('Отмеченные поля показываются в окне информации (клавиша I):',
     'Checked fields are shown in the information dialog (key I):');
-  FFieldAdd.Caption := L('Добавить EXIF-тег...', 'Add EXIF tag...');
-  FFieldRemove.Caption := L('Удалить свой тег', 'Remove own tag');
+  FFieldAdd.Caption := L('Добавить EXIF-&тег...', 'Add EXIF &tag...');
+  FFieldRemove.Caption := L('Удалить с&вой тег', 'Remove &own tag');
   FFieldExamples.Caption := L(
     'Свой тег задаётся номером (0x010E описание, 0x013B автор, 0x0131 программа, 0x8298 авторские права, ' +
     '0x9286 комментарий, 0x9C9B XP-заголовок, 0x9C9C XP-комментарий). Свои теги видны и на вкладке "Наложение".',
@@ -997,12 +1001,22 @@ begin
   ModalResult := mrOk;
 end;
 
+procedure ShowAccelerators(AForm: TForm);
+const
+  UIS_CLEAR = 2;
+  UISF_HIDEFOCUS = 1;
+  UISF_HIDEACCEL = 2;
+begin
+  SendMessage(AForm.Handle, WM_CHANGEUISTATE, UIS_CLEAR or ((UISF_HIDEFOCUS or UISF_HIDEACCEL) shl 16), 0);
+end;
+
 function ShowSettingsDialog: Boolean;
 var
   vForm: TSettingsForm;
 begin
   vForm := TSettingsForm.Create(nil);
   try
+    ShowAccelerators(vForm);
     Result := vForm.ShowModal = mrOk;
     if not Result then
       SetLanguage(vForm.OriginalLanguage);   // cancelled: undo the language preview

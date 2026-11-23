@@ -1,4 +1,4 @@
-﻿unit uVersion;
+﻿unit MyScreenSaver_Version;
 
 { Version of the application: it is stored once, in MyScreenSaverVersion.rc (compiled into the exe). }
 

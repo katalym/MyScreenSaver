@@ -1,4 +1,4 @@
-unit uLang;
+unit MyScreenSaver_Lang;
 
 { User interface language: Russian or English.
   Usage:  L('Русский текст', 'English text') returns the text of the current language. }

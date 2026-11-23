@@ -1,4 +1,4 @@
-﻿unit uPreview;
+﻿unit MyScreenSaver_Preview;
 
 { Preview mode (/p <hwnd>): Windows shows the screensaver in the small monitor of the
   "Screen Saver Settings" dialog. We show one random photo there. }
@@ -6,7 +6,7 @@
 interface
 
 uses
-  Winapi.Windows, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.ExtCtrls, Vcl.Graphics, uMedia;
+  Winapi.Windows, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.ExtCtrls, Vcl.Graphics, MyScreenSaver_Media;
 
 type
   TPreviewForm = class(TForm)
@@ -35,7 +35,7 @@ implementation
 {$R *.DFM}
 
 uses
-  System.SysUtils, System.Math, uConfig, uViewer;
+  System.SysUtils, System.Math, MyScreenSaver_Config, MyScreenSaver_Viewer;
 
 
 var

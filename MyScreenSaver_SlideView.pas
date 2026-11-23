@@ -1,4 +1,4 @@
-﻿unit uSlideView;
+﻿unit MyScreenSaver_SlideView;
 
 { The slide: shows a photo scaled to the window (letterboxed) and changes photos with a transition
   effect. The photo is scaled once per slide with the halftone mode, a transition only mixes two
@@ -9,7 +9,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Math, Vcl.Controls,
-  Vcl.Graphics, Vcl.ExtCtrls, Vcl.Clipbrd, uConfig;
+  Vcl.Graphics, Vcl.ExtCtrls, Vcl.Clipbrd, MyScreenSaver_Config;
 
 type
   { forward: the next photo (new one comes from the right / the wipe goes to the right);
